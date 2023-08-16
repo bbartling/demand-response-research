@@ -9,11 +9,10 @@ logging.basicConfig(level=logging.INFO)
 
 # Constants
 DEVICE_NAME = "device_1"
-PASSWORD = ""
+DR_SERVER_URL = "http://localhost:5000/payload/current"
 BACNET_INST_ID = 3056672
-
-# set up logging
-logging.basicConfig(level=logging.INFO)
+USE_DR_SERVER = True
+SERVER_CHECK_IN_SECONDS = 10
 
 class BACnetApp:
     @classmethod
@@ -48,29 +47,24 @@ class BACnetApp:
                 counter = 0
             await asyncio.sleep(0.01)
 
-class SimpleClient:
-    def __init__(self):
-        self.server_url = "http://example.com/simple_server"  # Change to your server URL
-
-    async def send_post_request(self, value):
-        # Simulate sending POST request to server
-        response = {"response": value}
-        return response
-
-logging.info("Starting main loop")
-
 async def main():
     bacnet_app = await BACnetApp.create()
-    simple_client = SimpleClient()
 
-    while True:
-        value_from_bacnet = 0 
-        response = await simple_client.send_post_request(value_from_bacnet)
+    tasks = [bacnet_app.keep_baco_alive()]
 
-        # Assuming the server's response contains a "response" field with 0 or 1
-        server_response = response.get("response", 0)
-        await asyncio.to_thread(bacnet_app.update_bacnet_api, server_response)
+    if USE_DR_SERVER:
+        async def server_check_in():
+            while True:
+                # Simulate sending POST request to server
+                value_from_bacnet = 0
+                response = {"response": value_from_bacnet}  # Simulated response
+                server_response = response.get("payload", 0)
+                logging.info(f"Received server response: {server_response}")
+                await asyncio.to_thread(bacnet_app.update_bacnet_api, server_response)
+                await asyncio.sleep(SERVER_CHECK_IN_SECONDS)
+        
+        tasks.append(server_check_in())
 
-        await asyncio.sleep(10)  # Adjust for check interval
+    await asyncio.gather(*tasks)
 
 asyncio.run(main())
