@@ -2,7 +2,7 @@ import requests
 import pandas as pd
 import time
 
-app_url = "https://bensapi.pythonanywhere.com/"
+app_url = "http://localhost:5000"
 auth_route = "/login"
 upload_route = "/update/data"
 

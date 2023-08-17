@@ -62,7 +62,7 @@ class BACnetApp:
             self.building_meter = electric_meter_obj.presentValue
 
         logging.info(
-            f"Event Level: {adr_sig_object.presentValue}, Power Level: {self.building_meter}"
+            f"Event Level: {self.last_server_payload}, Power Level: {self.building_meter}"
         )
 
     async def keep_baco_alive(self):
