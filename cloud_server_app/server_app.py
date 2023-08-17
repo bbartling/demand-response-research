@@ -56,29 +56,98 @@ def get_state_from_df():
         utc_time = datetime.datetime.utcnow()
         utc_time = utc_time.replace(tzinfo=pytz.UTC)   
         corrected_time = utc_time.astimezone(tz) 
-        current_block = corrected_time.replace(minute = (corrected_time.minute - corrected_time.minute % 15), second=0, microsecond=0)
+        current_block = corrected_time.replace(minute=(corrected_time.minute - corrected_time.minute % 15), second=0, microsecond=0)
         current_block_no_tz = current_block.replace(tzinfo=None)
 
-        # brute force through excel file to find a matching date
-        for row in df.iterrows():
-            if row[1][0].replace(second=0, microsecond=0) == current_block_no_tz:
-                date = row[1][0].replace(second=0, microsecond=0)
-                info = f'timeblock is {date}'
-                response_obj = {'status':'success','info':info,'server_time_corrected':str(corrected_time),'timezone':str(tz),'payload':row[1][1]}
-                logger.info(response_obj)   
-                return jsonify(response_obj), 200 
+        matching_row = df[df['Time Block'] == current_block_no_tz]
 
-        info = "timeblock not found"
-        response_obj = {'status':'success','info':info,'server_time_corrected':str(corrected_time),'timezone':str(tz),'payload':0}
-        logger.info(response_obj)   
-        return jsonify(response_obj), 200   
+        if not matching_row.empty:
+            date = matching_row.iloc[0]['Time Block']
+            info = f'timeblock is {date}'
+            response_obj = {
+                'status': 'success',
+                'info': info,
+                'server_time_corrected': str(corrected_time),
+                'timezone': str(tz),
+                'payload': matching_row.iloc[0]['Payload_Column_Name']
+            }
+            logger.info(response_obj)   
+            return jsonify(response_obj), 200
+        else:
+            info = "timeblock not found"
+            response_obj = {
+                'status': 'success',
+                'info': info,
+                'server_time_corrected': str(corrected_time),
+                'timezone': str(tz),
+                'payload': 0
+            }
+            logger.info(response_obj)   
+            return jsonify(response_obj), 200   
 
     except Exception as error:
         err = f"Internal Server Error - {error}"
-        response_obj = {'status':'fail','info':err,'server_time_corrected':str(corrected_time),'timezone':str(tz),'payload':0}
+        response_obj = {
+            'status': 'fail',
+            'info': err,
+            'server_time_corrected': str(corrected_time),
+            'timezone': str(tz),
+            'payload': 0
+        }
         logger.error(response_obj)   
-        return jsonify(response_obj), 500 
+        return jsonify(response_obj), 500
+    
+@cache.cached(timeout=60, key_prefix='get_state_from_df')
+def get_state_from_df():
+    try:
+        con = sqlite3.connect('payload_storage.db')
+        df = pd.read_sql("SELECT * from payload_data", con)
+        df.rename(columns={'index':'Time Block'}, inplace=True)
+        df.set_index('Time Block')
+        df['Time Block'] = pd.to_datetime(df['Time Block']).dt.round(freq='T')
+        utc_time = datetime.datetime.utcnow()
+        utc_time = utc_time.replace(tzinfo=pytz.UTC)   
+        corrected_time = utc_time.astimezone(tz) 
+        current_block = corrected_time.replace(minute=(corrected_time.minute - corrected_time.minute % 15), second=0, microsecond=0)
+        current_block_no_tz = current_block.replace(tzinfo=None)
 
+        matching_row = df[df['Time Block'] == current_block_no_tz]
+
+        if not matching_row.empty:
+            date = matching_row.iloc[0]['Time Block']
+            info = f'timeblock is {date}'
+            response_obj = {
+                'status': 'success',
+                'info': info,
+                'server_time_corrected': str(corrected_time),
+                'timezone': str(tz),
+                'payload': matching_row.iloc[0]['Payload_Column_Name']
+            }
+            logger.info(response_obj)   
+            return jsonify(response_obj), 200
+        else:
+            info = "timeblock not found"
+            response_obj = {
+                'status': 'success',
+                'info': info,
+                'server_time_corrected': str(corrected_time),
+                'timezone': str(tz),
+                'payload': 0
+            }
+            logger.info(response_obj)   
+            return jsonify(response_obj), 200   
+
+    except Exception as error:
+        err = f"Internal Server Error - {error}"
+        response_obj = {
+            'status': 'fail',
+            'info': err,
+            'server_time_corrected': str(corrected_time),
+            'timezone': str(tz),
+            'payload': 0
+        }
+        logger.error(response_obj)   
+        return jsonify(response_obj), 500
 
 
 @app.route('/payload/current', methods=['GET'])
@@ -91,7 +160,6 @@ def event_state_current():
     else:
         logger.info("Fetching data and updating cache.")
         return get_state_from_df()
-
 
 
 @app.route('/update/data', methods=['POST'])
