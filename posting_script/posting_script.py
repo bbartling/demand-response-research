@@ -2,8 +2,7 @@ import requests
 import pandas as pd
 import time
 
-
-app_url = "https://localhost:5000"
+app_url = "https://bensapi.pythonanywhere.com/"
 auth_route = "/login"
 upload_route = "/update/data"
 
@@ -46,10 +45,11 @@ print(r.text)
 
 if r.status_code == 200:
     print(f"Data upload successful. Check in web browser: {app_url}/payload/current")
-    time.sleep(30)
+    time.sleep(10)
 else:
     print(f"Error uploading data. Status code: {r.text}")
+    exit()
 
-time.sleep(30)
+
 
 
