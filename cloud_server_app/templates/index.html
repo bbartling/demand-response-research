@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Demand Response Dashboard</title>
+    <title>DR Dashboard</title>
     <style>
         body {
             background-color: #1f1f1f;
             color: #ffffff;
             font-family: Arial, sans-serif;
         }
-        
+
         .dashboard {
             max-width: 600px;
             margin: 0 auto;
@@ -17,14 +17,21 @@
             background-color: #333333;
             box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.3);
         }
-        
+
         h1 {
             font-size: 24px;
         }
-        
+
         p {
             font-size: 16px;
             margin-bottom: 10px;
+        }
+
+        /* Styling for the DR Payload */
+        #payload {
+            font-size: 20px;
+            font-weight: bold;
+            color: #ff9900; /* Change to your desired color */
         }
     </style>
     <script>
@@ -70,11 +77,11 @@
 <body>
     <div class="dashboard">
         <h1>Demand Response Dashboard</h1>
-        <p><strong>Excel Spreadsheet </strong> <span id="info"></span></p>
-        <p><strong>DR Payload:</strong> <span id="payload"></span></p>
+        <p><strong>Current DR Payload:</strong> <span id="payload"></span></p>
         <p><strong>Server Time Corrected:</strong> <span id="server-time"></span></p>
-        <p><strong>Status:</strong> <span id="status"></span></p>
-        <p><strong>Timezone:</strong> <span id="timezone"></span></p>
+        <p><strong>App Status:</strong> <span id="status"></span></p>
+        <p><strong>Timezone Config:</strong> <span id="timezone"></span></p>
+        <p><strong>Excel Spreadsheet </strong> <span id="info"></span></p>
     </div>
 </body>
 </html>

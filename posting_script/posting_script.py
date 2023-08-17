@@ -2,12 +2,12 @@ import requests
 import pandas as pd
 import time
 
-app_url = "http://localhost:5000"
+app_url = "https://localhost:5000"
 auth_route = "/login"
 upload_route = "/update/data"
 
 username = "user1"
-password = "password123"
+password = "password123" 
 
 print(f"logging into API now @ {app_url + auth_route}!")
 
@@ -27,7 +27,7 @@ token = response.json()["access_token"]
 
 print("loading Excel File!")
 df = pd.read_excel(
-    "slipstream_event_schedule.xlsx",
+    "event_schedule.xlsx",
     engine="openpyxl",
     index_col="Time Block",
     parse_dates=True,

@@ -3,15 +3,16 @@ import logging
 import BAC0
 from bacpypes.primitivedata import Real
 from BAC0.core.devices.local.models import analog_value, binary_value
+import aiohttp 
 
 # set up logging
 logging.basicConfig(level=logging.INFO)
 
 # Constants
 DEVICE_NAME = "device_1"
-DR_SERVER_URL = "http://localhost:5000/payload/current"
+DR_SERVER_URL = "https://localhost:5000/payload/current"
 BACNET_INST_ID = 3056672
-USE_DR_SERVER = True
+USE_DR_SERVER = False
 SERVER_CHECK_IN_SECONDS = 10
 
 class BACnetApp:
@@ -33,7 +34,7 @@ class BACnetApp:
         )
         return _new_objects
 
-    def update_bacnet_api(self, value):
+    async def update_bacnet_api(self, value):
         electric_meter_obj = self.bacnet.this_application.get_object_name("power-level")
         electric_meter_obj.presentValue = value
 
@@ -41,11 +42,29 @@ class BACnetApp:
         counter = 0
         while True:
             counter += 1
-            # update BACnet API ~ every second
-            if counter == 100:
-                await asyncio.to_thread(self.update_bacnet_api, 0)  # Set value to 0
-                counter = 0
             await asyncio.sleep(0.01)
+            if counter == 100:
+                counter = 0
+                async with self.server_check_lock:
+                    await self.update_bacnet_api(0)  # Set value to 0
+
+    async def server_check_in(self):
+        while True:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(DR_SERVER_URL) as response:
+                        if response.status == 200:
+                            server_data = await response.json()
+                            server_payload = server_data.get("payload", 0)
+                            logging.info(f"Received server response: {server_payload}")
+                            async with self.server_check_lock:
+                                await self.update_bacnet_api(server_payload)
+                        else:
+                            logging.warning(f"Server returned status code {response.status}")
+            except Exception as e:
+                logging.error(f"Error while fetching server response: {e}")
+            
+            await asyncio.sleep(SERVER_CHECK_IN_SECONDS)
 
 async def main():
     bacnet_app = await BACnetApp.create()
@@ -53,17 +72,9 @@ async def main():
     tasks = [bacnet_app.keep_baco_alive()]
 
     if USE_DR_SERVER:
-        async def server_check_in():
-            while True:
-                # Simulate sending POST request to server
-                value_from_bacnet = 0
-                response = {"response": value_from_bacnet}  # Simulated response
-                server_response = response.get("payload", 0)
-                logging.info(f"Received server response: {server_response}")
-                await asyncio.to_thread(bacnet_app.update_bacnet_api, server_response)
-                await asyncio.sleep(SERVER_CHECK_IN_SECONDS)
-        
-        tasks.append(server_check_in())
+        tasks.append(bacnet_app.server_check_in())
+
+    bacnet_app.server_check_lock = asyncio.Lock()  # Create a lock for synchronization
 
     await asyncio.gather(*tasks)
 
