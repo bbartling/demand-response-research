@@ -2,12 +2,13 @@ import requests
 import pandas as pd
 import time
 
-app_url = "https://bensapi.pythonanywhere.com/"
+
+app_url = "https://localhost:5000"
 auth_route = "/login"
 upload_route = "/update/data"
 
-username = "Slipstreamerzzz"
-password = "T@$tyP0rk!" 
+username = "user1"
+password = "password123" 
 
 print(f"logging into API now @ {app_url + auth_route}!")
 
