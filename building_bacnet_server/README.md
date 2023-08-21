@@ -20,7 +20,7 @@ $ python bacnet_server.py
 
 # Steps
 
-## If successful with checkin to the `USE_DR_SERVER` run `bacnet_server.py` as a linux service.
+### If successful with checkin to the `USE_DR_SERVER` run `bacnet_server.py` as a linux service.
 
 1. **Create a Service Unit File**
 
