@@ -14,6 +14,7 @@ DR_SERVER_URL = "http://localhost:5000/payload/current"
 BACNET_INST_ID = 3056672
 USE_DR_SERVER = False
 SERVER_CHECK_IN_SECONDS = 10
+IP_ADDRESS = "192.168.0.110/24"
 
 class BACnetApp:
     @classmethod
