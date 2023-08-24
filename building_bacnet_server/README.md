@@ -86,7 +86,7 @@ $ python bacnet_server.py
 
 # Troubleshooting
 
-If app runs but other OT platforms cannot see or integrate the app across the OT LAN, start with network `ping` and possibily even using a [BACnet scanning tool](https://www.ccontrols.com/sd/bdt.htm) from another device on the OT LAN. The link is to a free tool made by contemporary controls where the app and `demand-response-level` BACnet point should come up on analog input 1 as shown below:
+If app runs but other OT platforms cannot see or integrate the app across the OT LAN, start with network `ping` and possibly even using a [BACnet scanning tool](https://www.ccontrols.com/sd/bdt.htm) from another device on the OT LAN. The link is to a free tool which runs on Windows made by contemporary controls where the app and `demand-response-level` BACnet point should come up on analog input 1 as shown below:
 
 
 ![Alt text](/images/bacnet_scan.jpg)

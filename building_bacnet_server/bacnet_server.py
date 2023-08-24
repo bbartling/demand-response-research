@@ -1,12 +1,11 @@
 import asyncio
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import BAC0
 from bacpypes.primitivedata import Real
 from BAC0.core.devices.local.models import analog_value, binary_value
-import aiohttp 
-
-# set up logging
-logging.basicConfig(level=logging.INFO)
+import aiohttp
+import os
 
 # Constants
 DEVICE_NAME = "device_1"
@@ -15,6 +14,16 @@ BACNET_INST_ID = 3056672
 USE_DR_SERVER = False
 SERVER_CHECK_IN_SECONDS = 10
 IP_ADDRESS = "192.168.0.110/24"
+
+# Logging setup
+script_directory = os.path.dirname(os.path.abspath(__file__))
+log_filename = os.path.join(script_directory, "app_log.log")
+logging.basicConfig(level=logging.INFO)
+log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler = TimedRotatingFileHandler(log_filename, when="midnight", interval=1, backupCount=7)
+file_handler.setFormatter(log_formatter)
+logging.getLogger('').addHandler(file_handler)
+
 
 class BACnetApp:
     @classmethod
