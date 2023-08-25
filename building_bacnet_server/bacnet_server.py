@@ -5,6 +5,8 @@ import BAC0
 from bacpypes.primitivedata import Real
 from BAC0.core.devices.local.models import analog_value, binary_value
 import aiohttp
+import aiohttp
+from aiohttp import web
 import os
 
 # DR Server Setup
@@ -14,8 +16,12 @@ BACNET_INST_ID = 3056672
 USE_DR_SERVER = False
 SERVER_CHECK_IN_SECONDS = 10
 
+# Use REST API locally
+# to share DR signal to OT
+USE_REST = True
+
 # BACnet NIC setup:
-IP_ADDRESS = "192.168.0.101"
+IP_ADDRESS = "192.168.0.109"
 SUBNET_MASK_CIDAR = 24
 PORT = "47820"
 BBMD = None
@@ -57,6 +63,21 @@ class BACnetApp:
         )
         return _new_objects
 
+
+    async def get_last_server_payload(self, request):
+        payload = {"demand_response_level": self.last_server_payload}
+        return web.json_response(payload)
+
+    async def start_rest_api(self):
+        app = web.Application()
+        app.router.add_get('/api/demand-response-level', self.get_last_server_payload)
+        
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', 8080)  # Bind to all network interfaces
+        await site.start()
+
+
     async def update_bacnet_api(self, value):
         electric_meter_obj = self.bacnet.this_application.get_object_name("demand-response-level")
         electric_meter_obj.presentValue = value
@@ -80,6 +101,7 @@ class BACnetApp:
             f"Event Level: {self.last_server_payload}, Power Level: {self.building_meter}"
         )
 
+
     async def keep_baco_alive(self):
         counter = 0
         while True:
@@ -89,6 +111,7 @@ class BACnetApp:
                 counter = 0
                 async with self.server_check_lock:
                     await self.update_bacnet_api(self.last_server_payload)
+
 
     async def server_check_in(self):
         while True:
@@ -108,10 +131,14 @@ class BACnetApp:
             
             await asyncio.sleep(SERVER_CHECK_IN_SECONDS)
 
+
 async def main():
     bacnet_app = await BACnetApp.create()
 
     tasks = [bacnet_app.keep_baco_alive()]
+
+    if USE_REST:
+        tasks.append(bacnet_app.start_rest_api())
 
     if USE_DR_SERVER:
         tasks.append(bacnet_app.server_check_in())
