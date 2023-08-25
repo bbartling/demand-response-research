@@ -5,7 +5,6 @@ import BAC0
 from bacpypes.primitivedata import Real
 from BAC0.core.devices.local.models import analog_value, binary_value
 import aiohttp
-import aiohttp
 from aiohttp import web
 import os
 
@@ -16,8 +15,7 @@ BACNET_INST_ID = 3056672
 USE_DR_SERVER = False
 SERVER_CHECK_IN_SECONDS = 10
 
-# Use REST API locally
-# to share DR signal to OT
+# Use a local REST API to share DR signal to OT LAN
 USE_REST = True
 
 # BACnet NIC setup:
@@ -27,13 +25,16 @@ PORT = "47820"
 BBMD = None
 
 # Logging setup
-script_directory = os.path.dirname(os.path.abspath(__file__))
-log_filename = os.path.join(script_directory, "app_log.log")
-logging.basicConfig(level=logging.INFO)
-log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-file_handler = TimedRotatingFileHandler(log_filename, when="midnight", interval=1, backupCount=7)
-file_handler.setFormatter(log_formatter)
-logging.getLogger('').addHandler(file_handler)
+SAVE_LOGS_TO_FILE = True
+
+if SAVE_LOGS_TO_FILE:
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    log_filename = os.path.join(script_directory, "app_log.log")
+    logging.basicConfig(level=logging.INFO)
+    log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler = TimedRotatingFileHandler(log_filename, when="midnight", interval=1, backupCount=7)
+    file_handler.setFormatter(log_formatter)
+    logging.getLogger('').addHandler(file_handler)
 
 
 class BACnetApp:
@@ -65,8 +66,11 @@ class BACnetApp:
 
 
     async def get_last_server_payload(self, request):
+        logging.info("Received request for last server payload.")
         payload = {"demand_response_level": self.last_server_payload}
+        logging.info(f"Returning payload: {payload}")
         return web.json_response(payload)
+
 
     async def start_rest_api(self):
         app = web.Application()
