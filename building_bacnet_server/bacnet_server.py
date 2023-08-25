@@ -7,13 +7,18 @@ from BAC0.core.devices.local.models import analog_value, binary_value
 import aiohttp
 import os
 
-# Constants
+# DR Server Setup
 DEVICE_NAME = "device_1"
 DR_SERVER_URL = "http://localhost:5000/payload/current"
 BACNET_INST_ID = 3056672
 USE_DR_SERVER = False
 SERVER_CHECK_IN_SECONDS = 10
-IP_ADDRESS = "192.168.0.110/24"
+
+# BACnet NIC setup:
+IP_ADDRESS = "192.168.0.101"
+SUBNET_MASK_CIDAR = 24
+PORT = "47820"
+BBMD = None
 
 # Logging setup
 script_directory = os.path.dirname(os.path.abspath(__file__))
@@ -29,7 +34,7 @@ class BACnetApp:
     @classmethod
     async def create(cls):
         self = BACnetApp()
-        self.bacnet = await asyncio.to_thread(BAC0.lite, ip=IP_ADDRESS,deviceId=BACNET_INST_ID)
+        self.bacnet = await asyncio.to_thread(BAC0.lite, ip=IP_ADDRESS, port=PORT , mask=SUBNET_MASK_CIDAR, deviceId=BACNET_INST_ID, bbmdAddress=BBMD)
         self.building_meter = 0.0  # default power val
         self.last_server_payload = 0
         _new_objects = self.create_objects()
