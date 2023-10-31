@@ -97,6 +97,26 @@ $ python bacnet_server.py
    sudo systemctl status bacnet_server.service
    ```
 
+### **Reload Linux service if modifiations are required to the .py file and or Linux service**
+   Reload the systemd configuration. This tells systemd to recognize your changes:
+   ```bash
+   sudo systemctl daemon-reload
+   ```
+
+   Restart your service to apply the changes:
+   ```bash
+   sudo systemctl restart bacnet_server.service
+   ```
+
+   Check the status to ensure it's running as expected:
+   ```bash
+   sudo systemctl status bacnet_server.service
+   ```
+
+   See debug print statements:
+   ```bash
+   sudo journalctl -u bacnet_server.service -f
+   ```
 
 # Troubleshooting
 
