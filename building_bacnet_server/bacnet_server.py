@@ -1,199 +1,313 @@
 import asyncio
-import logging
-from logging.handlers import TimedRotatingFileHandler
-import BAC0
-from bacpypes.primitivedata import Real
-from BAC0.core.devices.local.models import analog_value, binary_value
-from datetime import datetime, timedelta
+import re
+
+from bacpypes3.debugging import ModuleLogger
+from bacpypes3.argparse import SimpleArgumentParser
+
+from bacpypes3.app import Application
+from bacpypes3.local.analog import AnalogValueObject
+from bacpypes3.local.binary import BinaryValueObject
+from bacpypes3.local.cmd import Commandable
+
+from bacpypes3.pdu import Address
+from bacpypes3.primitivedata import ObjectIdentifier
+from bacpypes3.apdu import ErrorRejectAbortNack
+
 import aiohttp
-from aiohttp import web
-import os
 
-# DR Server Setup
-DEVICE_NAME = "device_1"
-DR_SERVER_URL = "http://localhost:5000/payload/current"
-BACNET_INST_ID = 3056672
+# $ python3 bacnet_server.py --name Slipstream --instance 3056672 --color --debug
+
+
+# 'property[index]' matching
+property_index_re = re.compile(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$")
+487
+
+class CommandableAnalogValueObject(Commandable, AnalogValueObject):
+    """
+    Commandable Analog Value Object
+    """
+
+
+_debug = 0
+_log = ModuleLogger(globals())
+
+DR_SERVER_URL = "https://bensapi.pythonanywhere.com/payload/current"
 USE_DR_SERVER = True
-SERVER_CHECK_IN_SECONDS = 10
+cloud_server_check_in_SECONDS = 10
 
-# BACnet NIC setup:
-IP_ADDRESS = "192.168.0.101"
-SUBNET_MASK_CIDAR = 24
-PORT = "47808"
-BBMD = None
+INTERVAL = 1.0
+BACNET_REQ_INTERVAL = 60.0
+WRITE_PRIORITY = 10
+READ_REQUESTS = [
+    {
+        "device_address": "12345:2",
+        "object_identifier": "analog-input,2",
+        "property_identifier": "present-value",
+        "property_array_index": None,
+        "technology_silo": "hvac",
+        "tags": "temp setpoint",
+        "note": "conference room 241"
+    },
+    {
+        "device_address": "12345:2",
+        "object_identifier": "analog-value,301",
+        "property_identifier": "present-value",
+        "property_array_index": None,
+        "technology_silo": "lighting",
+        "tags": "occupancy sensor point",
+        "note": "conference room 241"
+    },
+    {
+        "device_address": "12345:2",
+        "object_identifier": "analog-value,301",
+        "property_identifier": "present-value",
+        "technology_silo": "hvac",
+        "tags": "occupancy sensor point",
+        "note": "conference room 241"
+    }
+]
 
-# Use REST API locally
-# to share DR signal to OT
-USE_REST = True
+WRITE_REQUESTS = [
+    {
+        "device_address": "12345:2",
+        "object_identifier": "analog-value,301",
+        "property_identifier": "present-value",
+        "technology_silo": "hvac",
+        "tags": "occupancy sensor point",
+        "note": "conference room 241"
+    },
+    {
+        "device_address": "12345:2",
+        "object_identifier": "analog-value,301",
+        "property_identifier": "present-value",
+        "technology_silo": "lighting",
+        "tags": "occupancy sensor point",
+        "note": "conference room 241"
+    }
+]
 
-# Logging setup
-script_directory = os.path.dirname(os.path.abspath(__file__))
-log_filename = os.path.join(script_directory, "app_log.log")
-logging.basicConfig(level=logging.INFO)
-log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-file_handler = TimedRotatingFileHandler(log_filename, when="midnight", interval=1, backupCount=7)
-file_handler.setFormatter(log_formatter)
+class SampleApplication:
+    def __init__(self, 
+                args,
+                dr_signal,
+                power_level,
+                app_status,
+                 ):
+        # embed an application
+        self.app = Application.from_args(args)
 
-class BACnetApp:
-    @classmethod
-    async def create(cls):
-        self = BACnetApp()
-        self.bacnet = await asyncio.to_thread(BAC0.lite, 
-                                              ip=IP_ADDRESS, 
-                                              port=PORT , 
-                                              mask=SUBNET_MASK_CIDAR, 
-                                              deviceId=BACNET_INST_ID, 
-                                              bbmdAddress=BBMD)
-        self.building_meter = 0.0  # default power val
+        # extract the kwargs that are special to this application
+        self.dr_signal = dr_signal
+        self.app.add_object(dr_signal)
+
+        self.power_level = power_level
+        self.app.add_object(power_level)
+
+        self.app_status = app_status
+        self.app.add_object(app_status)
+        
+        # demand resp server payload from cloud
         self.last_server_payload = 0
-        self.last_read_write_req_time = datetime.now() - timedelta(seconds=30)
-        self.bacnet_app_started = False
-        _new_objects = self.create_objects()
-        _new_objects.add_objects_to_application(self.bacnet)
-        self.server_check_lock = asyncio.Lock()  # Create a lock for synchronization
-        logging.info("BACnet APP Created Success!")
-        return self
 
-    def create_objects(self):
-        _new_objects = analog_value(
-            name="power-level",
-            description="Writeable point for electric meter reading",
-            presentValue=0,
-            is_commandable=True,
-        )
-        _new_objects = analog_value(
-            name="demand-response-level",
-            description="SIMPLE SIGNAL demand response level",
-            presentValue=0,
-            is_commandable=False,
-        )
-        return _new_objects
-    
-    def update_bacnet_points(self, value):
-        electric_meter_obj = self.bacnet.this_application.get_object_name("demand-response-level")
-        electric_meter_obj.presentValue = value
+        # create a task to update the values
+        asyncio.create_task(self.update_bacnet_server_values())
+        asyncio.create_task(self.read_property_task())
         
-        # update adr payload value to the BACnet API
-        adr_sig_object = self.bacnet.this_application.get_object_name(
-            "demand-response-level"
-        )
-        adr_sig_object.presentValue = Real(value)
-
-        # update electric meter write value from BAS for open ADR report
-        electric_meter_obj = self.bacnet.this_application.get_object_name("power-level")
-
-        # default value is a BACnet primitive data type called Real that
-        if isinstance(electric_meter_obj.presentValue, Real):
-            self.building_meter = electric_meter_obj.presentValue.value
-        else:
-            self.building_meter = electric_meter_obj.presentValue
-
-        return f"Update BACnet API Success - \
-                Event Level: {self.last_server_payload} - \
-                Power Level: {self.building_meter}"
-                
-    def bac0_read_req(self, read_str):
-        sensor = self.bacnet.read(read_str)
-        return sensor
-    
-    def bac0_write_req(self, write_str):
-        self.bacnet.write(write_str)
-
-    async def get_last_server_payload(self, request):
-        payload = {"demand_response_level": self.last_server_payload}
-        return web.json_response(payload)
-
-    async def start_rest_api(self):
-        app = web.Application()
-        app.router.add_get('/api/demand-response-level', self.get_last_server_payload)
-        
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, '0.0.0.0', 8080)  # Bind to all network interfaces
-        await site.start()
-
-    async def update_bacnet_api(self, value):
-        result = await asyncio.to_thread(self.update_bacnet_points, value)
-        
-        logging.info(
-            result
-        )
-        
-    async def fire_off_bacnet_requests(self, value):
-        current_time = datetime.now()
-        if current_time - self.last_read_write_req_time >= timedelta(seconds=30):
-            logging.info(
-                f"fire_off_bacnet_requests: {self.last_server_payload} \
-                    - Value: {value}"
-            )
+        if USE_DR_SERVER:
+            # Create a lock for the server check to ensure it's not running concurrently
+            self.server_check_lock = asyncio.Lock()
+            asyncio.create_task(self.cloud_server_check_in())
+            
+    async def cloud_server_check_in(self):
+        while True:
             try:
-                read_sensor_str = '12345:2 analogInput 2 presentValue'
-                logging.info("Executing BACnet read_sensor_str statement: %s", read_sensor_str)
-                sensor = await asyncio.to_thread(self.bac0_read_req, read_sensor_str)
-                logging.info("sensor: %s", sensor)
-
-                # write to rasp pi BACnet server running bacpypes
-                write_vals = f'12345:2 analogValue 301 presentValue {sensor} - 10'
-                await asyncio.to_thread(self.bac0_write_req, write_vals)
-                logging.info("Executed BACnet write_vals statement: %s", write_vals)
-
-                av_check_str = '12345:2 analogInput 2 presentValue'
-                logging.info("Executing read_sensor_str statement: %s", av_check_str)
-                av_check = await asyncio.to_thread(self.bac0_read_req, av_check_str)
-                logging.info("av_check: %s", av_check)
-
-            except Exception as e:
-                logging.error("Error during fire_off_bacnet_requests: %s", e)
-
-            self.last_read_write_req_time = current_time
-
-            
-    async def keep_baco_alive(self):
-        counter = 0
-        while True:
-            if self.bacnet_app_started:
-                async with self.server_check_lock:
-                    await self.update_bacnet_api(self.last_server_payload)
-                    await self.fire_off_bacnet_requests(self.last_server_payload)
-                
-            else:
-                counter += 1
-            
-            if counter > 5:
-                self.bacnet_app_started = True
-                
-            await asyncio.sleep(1)
-
-    async def server_check_in(self):
-        while True:
-            try:        
                 async with aiohttp.ClientSession() as session:
                     async with session.get(DR_SERVER_URL) as response:
                         if response.status == 200:
                             server_data = await response.json()
-                            self.last_server_payload = server_data.get("payload", 0)
-                            logging.info(f"Received server response: {self.last_server_payload}")
                             async with self.server_check_lock:
-                                await self.update_bacnet_api(self.last_server_payload)
+                                self.last_server_payload = server_data.get("payload", 0)
+                            _log.info(f"Received server response: {self.last_server_payload}")
                         else:
-                            logging.warning(f"Server returned status code {response.status}")
+                            _log.warning(f"Server returned status code {response.status}")
             except Exception as e:
-                logging.error(f"Error while fetching server response: {e}")
+                _log.error(f"Error while fetching server response: {e}")
+
+            await asyncio.sleep(cloud_server_check_in_SECONDS)
+
+    async def share_data_to_bacnet_server(self):
+        async with self.server_check_lock:
+            return self.last_server_payload
+        
+    async def update_bacnet_server_values(self):
+        while True:
+            await asyncio.sleep(INTERVAL)
+
+            self.dr_signal.presentValue = await self.share_data_to_bacnet_server()
+            self.app_status.presentValue = "active"
             
-            await asyncio.sleep(SERVER_CHECK_IN_SECONDS)
+            if _debug:
+                _log.debug(
+                    "    - power_level: %r\n"
+                    "    - dr_signal: %r\n"
+                    "    - app_status: %r",
+                    self.power_level.presentValue,
+                    self.dr_signal.presentValue,
+                    self.app_status.presentValue,
+                )
+        
+    async def write_property_task(self, 
+                                device_address, 
+                                object_identifier, 
+                                property_identifier, 
+                                value, 
+                                priority=WRITE_PRIORITY):
+        
+        if _debug:
+            _log.debug("device_address: %r", device_address)
+            _log.debug("object_identifier: %r", object_identifier)
+        
+        # split the property identifier and its index
+        property_index_match = property_index_re.match(property_identifier)
+        if not property_index_match:
+            raise ValueError("property specification incorrect")
+        
+        property_identifier, property_array_index = property_index_match.groups()
+        if property_array_index is not None:
+            property_array_index = int(property_array_index)
+
+        if _debug:
+            _log.debug("property_array_index: %r", property_array_index)
+            
+        # check the priority
+        if priority:
+            priority = int(priority)
+            if (priority < 1) or (priority > 16):
+                raise ValueError(f"priority: {priority}")
+        if _debug:
+            _log.debug("priority: %r", priority)
+        
+        try:
+            response = await self.app.write_property(
+                device_address,
+                object_identifier,
+                property_identifier,
+                value,
+                property_array_index,
+                priority,
+            )
+            if _debug:
+                _log.debug("response: %r", response)
+            if _debug:
+                _log.debug("Write property successful")
+        except ErrorRejectAbortNack as err:
+            if _debug:
+                _log.debug("    - exception: %r", err)
+            else:
+                print("Write property failed: ", err)
+
+                
+    async def condition_check(self, req, response):
+        if req["object_identifier"] == "analog-input,2" and response is not None and response > 80:
+            return True
+        return False
+        
+    async def read_property_task(self):
+        while True:
+            for req in READ_REQUESTS:
+                await asyncio.sleep(BACNET_REQ_INTERVAL)
+                try:
+                    device_address = Address(req["device_address"])
+                    object_identifier = ObjectIdentifier(req["object_identifier"])
+                    response = await self.app.read_property(
+                        device_address,
+                        object_identifier,
+                        req["property_identifier"],
+                        req["property_array_index"],
+                    )
+                    
+                    if _debug:
+                        _log.debug("device_address: %r", device_address)
+                        _log.debug("object_identifier: %r", object_identifier)
+                        _log.debug("response: %r", response)
+
+                    # Conditional logic to call write_property_task
+                    if await self.condition_check(req, response):
+                        
+                        # Call write_property_task with the value 100
+                        await self.write_property_task(
+                            Address(WRITE_REQUESTS[0]["device_address"]),
+                            ObjectIdentifier(WRITE_REQUESTS[0]["object_identifier"]),
+                            WRITE_REQUESTS[0]["property_identifier"],
+                            100,
+                        )
+                        
+                    else:
+                        # Call write_property_task with the value 0
+                        await self.write_property_task(
+                            Address(WRITE_REQUESTS[0]["device_address"]),
+                            ObjectIdentifier(WRITE_REQUESTS[0]["object_identifier"]),
+                            WRITE_REQUESTS[0]["property_identifier"],
+                            0,
+                        )
+
+                except ErrorRejectAbortNack as err:
+                    if _debug:
+                        _log.debug("    - exception: %r", err)
+                    response = err
+
+                _log.debug(str(response))
+
 
 async def main():
-    bacnet_app = await BACnetApp.create()
+    args = SimpleArgumentParser().parse_args()
+    if _debug:
+        _log.debug("args: %r", args)
 
-    tasks = [bacnet_app.keep_baco_alive()]
+    # define BACnet objects
+    dr_signal = AnalogValueObject(
+        objectIdentifier=("analogValue", 1),
+        objectName="demand-response-level",
+        presentValue=0.0,
+        statusFlags=[0, 0, 0, 0],
+        covIncrement=1.0,
+        description="SIMPLE SIGNAL demand response level",
+    )
 
-    if USE_REST:
-        tasks.append(bacnet_app.start_rest_api())
+    # Create an instance of your commandable object
+    power_level = CommandableAnalogValueObject(
+        objectIdentifier=("analogValue", 2),
+        objectName="power-level",
+        presentValue=-1.0,
+        statusFlags=[0, 0, 0, 0],
+        covIncrement=1.0,
+        description="Writeable point for utility meter",
+    )
+    
+    app_status = BinaryValueObject(
+        objectIdentifier=("binaryValue", 1),
+        objectName="cloud-dr-server-state",
+        presentValue="active",
+        statusFlags=[0, 0, 0, 0],
+        description="True if app can reach to cloud DR server",
+    )
 
-    if USE_DR_SERVER:
-        tasks.append(bacnet_app.server_check_in())
+    # instantiate the SampleApplication with test_av and test_bv
+    app = SampleApplication(
+        args,
+        dr_signal=dr_signal,
+        power_level=power_level,
+        app_status=app_status,
+    )
+    if _debug:
+        _log.debug("app: %r", app)
 
-    await asyncio.gather(*tasks)
+    await asyncio.Future()
 
-asyncio.run(main())
 
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        if _debug:
+            _log.debug("keyboard interrupt")

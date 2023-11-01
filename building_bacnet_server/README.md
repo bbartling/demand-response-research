@@ -56,7 +56,7 @@ $ python bacnet_server.py
    [Service]
    User=your_username
    WorkingDirectory=/home/your_username/bacnet-demand-response-client-server/building_bacnet_server
-   ExecStart=/usr/bin/python3 bacnet_server.py
+   ExecStart=/usr/bin/python3 bacnet_server.py --name Slipstream --instance 3056672 --debug
    Restart=always
 
    [Install]
