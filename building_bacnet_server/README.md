@@ -1,35 +1,24 @@
 # Running a BACnet server inside the building on OT LAN as a Service on linux edge device using systemd
 
-Update script constants with text editor:
+Update script constants with text editor for the cloud based demand response server (DR):
 
 ```python
 # DR Server Setup
-DEVICE_NAME = "device_1"
 DR_SERVER_URL = "http://localhost:5000/payload/current"
-BACNET_INST_ID = 3056672
 USE_DR_SERVER = False
 SERVER_CHECK_IN_SECONDS = 10
 
-# Use a local REST API to share DR signal to OT LAN
-USE_REST = True
-
-# BACnet NIC setup:
-IP_ADDRESS = "192.168.0.109"
-SUBNET_MASK_CIDAR = 24
-PORT = "47808"
-BBMD = None
-
-# Logging setup
-SAVE_LOGS_TO_FILE = True
 ```
 * `DR_SERVER_URL` is the cloud based demand response app that is used to get and change the DR signal sent to the buildings.
-* `USE_REST` is an option in addition to the BACnet API if there is an issue with some OT equipment inside the building that cannot read a BACnet API to get the DR signal into thier platform. Hit your device on the `IP_ADDRESS` with a GET request for example, `http://192.168.0.101:8080/api/demand-response-level` to retreive JSON payload of demand response event info like `{"demand_response_level": 1}`
-* `SAVE_LOGS_TO_FILE` if True defaults to a log file name as `app_log.log`, is rotated daily, and only retains the previous 7 log files to prevent hard drive space from filling up if app is ran long term.
-* This app has been successfully tested rasp pi and on dual nic card nanopi r1 that runs ubuntu where `IP_ADDRESS` can be statically assigned for OT network and the other nic card can be internet access to the `DR_SERVER_URL`.
 
-Test script:
+Setup:
 ```bash
-$ python bacnet_server.py
+$ python -m pip install bacpypes3 aiohttp
+```
+
+Test script and use args to set BACnet device name and instance ID that comes by default with bacpypes3:
+```bash
+$ python bacnet_server.py --name Slipstream --instance 3056672 --color --debug
 ```
 
 # Steps
