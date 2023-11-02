@@ -21,7 +21,6 @@ import aiohttp
 # 'property[index]' matching
 property_index_re = re.compile(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$")
 
-
 class CommandableAnalogValueObject(Commandable, AnalogValueObject):
     """
     Commandable Analog Value Object

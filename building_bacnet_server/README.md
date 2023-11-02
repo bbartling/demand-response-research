@@ -13,17 +13,22 @@ SERVER_CHECK_IN_SECONDS = 10
 
 Setup:
 ```bash
-$ python -m pip install bacpypes3 aiohttp
+python -m pip install bacpypes3 aiohttp ifaddr
 ```
 
 Test script and use args to set BACnet device name and instance ID that comes by default with bacpypes3:
 ```bash
-$ python bacnet_server.py --name Slipstream --instance 3056672 --color --debug
+python bacnet_server.py --name Slipstream --instance 3056672 --color --debug
 ```
 
 # Steps
 
 ### If successful with checkin to the `USE_DR_SERVER` run `bacnet_server.py` as a linux service.
+
+Setup:
+```bash
+sudo python -m pip install bacpypes3 aiohttp ifaddr
+```
 
 1. **Create a Service Unit File**
 
@@ -35,7 +40,7 @@ $ python bacnet_server.py --name Slipstream --instance 3056672 --color --debug
    sudo nano bacnet_server.service
    ```
 
-2. **Add the Service Configuration**
+2. **Add the Service Configuration** - Make sure you modify the field `User=your_username` and the correct `WorkingDirectory` fields
 
    ```bash
    [Unit]
