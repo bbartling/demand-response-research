@@ -21,6 +21,8 @@ Test script and use args to set BACnet device name and instance ID that comes by
 python bacnet_server.py --name Slipstream --instance 3056672 --color --debug
 ```
 
+If a different UDP port is required for the project use an arg like: `--address 192.168.13.14/24:47820`
+
 # Steps
 
 ### If successful with checkin to the `USE_DR_SERVER` run `bacnet_server.py` as a linux service.
