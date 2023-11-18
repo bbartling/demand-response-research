@@ -48,7 +48,7 @@ from typing import Callable, List, Optional, Tuple
 from bacpypes3.pdu import Address, IPv4Address
 from bacpypes3.comm import bind
 
-from bacpypes3.basetypes  import PriorityArray, PriorityValue
+from bacpypes3.basetypes import PriorityArray, PriorityValue
 
 from bacpypes3.debugging import bacpypes_debugging, ModuleLogger
 from bacpypes3.argparse import SimpleArgumentParser
@@ -60,7 +60,12 @@ from bacpypes3.npdu import IAmRouterToNetwork, InitializeRoutingTableAck
 from bacpypes3.comm import bind
 from typing import Callable, Optional, List
 from bacpypes3.constructeddata import AnyAtomic
-from bacpypes3.apdu import ErrorRejectAbortNack, PropertyReference, PropertyIdentifier, ErrorType
+from bacpypes3.apdu import (
+    ErrorRejectAbortNack,
+    PropertyReference,
+    PropertyIdentifier,
+    ErrorType,
+)
 from bacpypes3.vendor import get_vendor_info
 from bacpypes3.basetypes import PropertyIdentifier
 from bacpypes3.apdu import AbortReason, AbortPDU, ErrorRejectAbortNack
@@ -88,6 +93,7 @@ bvll_ase: Optional[BVLLServiceElement] = None
 # Define a list to store command history
 command_history = []
 
+
 @bacpypes_debugging
 class SampleCmd(Cmd):
     """
@@ -95,7 +101,7 @@ class SampleCmd(Cmd):
     """
 
     _debug: Callable[..., None]
-    
+
     async def do_read_point_priority_arr(
         self,
         address: Address,
@@ -104,16 +110,18 @@ class SampleCmd(Cmd):
         """
         usage: read address objid prop[indx]
         """
-        
+
         if _debug:
             _log.debug(
-                "do_read_point_priority_arr %r %r %r", address, object_identifier, 'priority-array'
+                "do_read_point_priority_arr %r %r %r",
+                address,
+                object_identifier,
+                "priority-array",
             )
-            
 
         try:
             response = await app.read_property(
-                address, object_identifier, 'priority-array'
+                address, object_identifier, "priority-array"
             )
             if _debug:
                 _log.debug("    - len(response): %r", len(response))
@@ -123,26 +131,42 @@ class SampleCmd(Cmd):
                 _log.debug("Parsing response objects..")
 
                 # Define all possible attributes of PriorityValue based on your class definition
-                attributes = ['null', 'real', 'enumerated', 'unsigned', 'boolean', 'integer', 'double', 'time', 'characterString', 'octetString', 'bitString', 'date', 'objectidentifier', 'constructedValue', 'datetime']
+                attributes = [
+                    "null",
+                    "real",
+                    "enumerated",
+                    "unsigned",
+                    "boolean",
+                    "integer",
+                    "double",
+                    "time",
+                    "characterString",
+                    "octetString",
+                    "bitString",
+                    "date",
+                    "objectidentifier",
+                    "constructedValue",
+                    "datetime",
+                ]
 
                 for index, priority_value in enumerate(response):
-                
                     for attr in attributes:
                         val = getattr(priority_value, attr, None)
                         if val is not None:
                             if _debug:
-                                _log.debug(f"Priority level {index + 1}: {attr} = {val}")
-                            
+                                _log.debug(
+                                    f"Priority level {index + 1}: {attr} = {val}"
+                                )
+
                             else:
                                 print(f"Priority level {index + 1}: {attr} = {val}")
 
         except ErrorRejectAbortNack as err:
             if _debug:
                 _log.debug("    - exception: %r", err)
-            
+
         except Exception as e:
             _log.error(f"Other error while doing operation: {e}")
-
 
     async def do_read(
         self,
@@ -154,10 +178,14 @@ class SampleCmd(Cmd):
         """
         usage: read address objid prop[indx]
         """
-        
+
         if _debug:
             _log.debug(
-                "do_read %r %r %r %r", address, object_identifier, property_identifier, property_array_index
+                "do_read %r %r %r %r",
+                address,
+                object_identifier,
+                property_identifier,
+                property_array_index,
             )
 
         # split the property identifier and its index
@@ -191,7 +219,7 @@ class SampleCmd(Cmd):
             property_value = property_value.get_value()
 
         await self.response(str(property_value))
-        
+
     async def do_write(
         self,
         address: Address,
@@ -222,7 +250,7 @@ class SampleCmd(Cmd):
         if not property_index_match:
             await self.response("property specification incorrect")
             return
-        
+
         property_identifier, property_array_index = property_index_match.groups()
         if property_array_index is not None:
             property_array_index = int(property_array_index)
@@ -289,9 +317,7 @@ class SampleCmd(Cmd):
         else:
             high_limit = None
         if _debug:
-            _log.debug(
-                "    - low_limit, high_limit: %r, %r", low_limit, high_limit
-            )
+            _log.debug("    - low_limit, high_limit: %r, %r", low_limit, high_limit)
 
         if not args_list:
             raise RuntimeError("object-identifier expected")
@@ -346,9 +372,7 @@ class SampleCmd(Cmd):
         usage: ihave objid objname [ address ]
         """
         if _debug:
-            _log.debug(
-                "do_ihave %r %r %r", object_identifier, object_name, address
-            )
+            _log.debug("do_ihave %r %r %r", object_identifier, object_name, address)
 
         app.i_have(object_identifier, object_name, address)
 
@@ -377,7 +401,7 @@ class SampleCmd(Cmd):
             vendor_info = get_vendor_info(0)
         if _debug:
             _log.debug("    - vendor_info: %r", vendor_info)
-        
+
         parameter_list = []
         while args_list:
             # use the vendor information to translate the object identifier,
@@ -464,9 +488,7 @@ class SampleCmd(Cmd):
                 )
 
     async def do_whois(
-        self,
-        low_limit: Optional[int] = None,
-        high_limit: Optional[int] = None
+        self, low_limit: Optional[int] = None, high_limit: Optional[int] = None
     ) -> None:
         """
         Send a Who-Is request and wait for the response(s).
@@ -521,7 +543,9 @@ class SampleCmd(Cmd):
         if _debug:
             _log.debug("    - vendor_info: %r", vendor_info)
 
-        object_list = await self.object_identifiers(app, device_address, device_identifier)
+        object_list = await self.object_identifiers(
+            app, device_address, device_identifier
+        )
         for object_identifier in object_list:
             object_class = vendor_info.get_object_class(object_identifier[0])
             if _debug:
@@ -543,9 +567,7 @@ class SampleCmd(Cmd):
                     _log.debug("    - property_list: %r", property_list)
             except ErrorRejectAbortNack as err:
                 if show_warnings:
-                    _log.error(
-                        f"{object_identifier} property-list error: {err}\n"
-                    )
+                    _log.error(f"{object_identifier} property-list error: {err}\n")
 
             for property_name in (
                 "object-name",
@@ -580,7 +602,7 @@ class SampleCmd(Cmd):
                         _log.error(
                             f"{object_identifier} {property_name} error: {err}\n"
                         )
-    
+
     async def object_identifiers(
         self,
         app,
@@ -602,7 +624,7 @@ class SampleCmd(Cmd):
                 device_address, device_identifier, "object-list"
             )
             return object_list
-        
+
         except AbortPDU as err:
             if err.apduAbortRejectReason != AbortReason.segmentationNotSupported:
                 if show_warnings:
@@ -665,9 +687,7 @@ class SampleCmd(Cmd):
         for adapter, i_am_router_to_network in result_list:
             if _debug:
                 _log.debug("    - adapter: %r", adapter)
-                _log.debug(
-                    "    - i_am_router_to_network: %r", i_am_router_to_network
-                )
+                _log.debug("    - i_am_router_to_network: %r", i_am_router_to_network)
 
             if i_am_router_to_network.npduSADR:
                 npdu_source = i_am_router_to_network.npduSADR

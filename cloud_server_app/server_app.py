@@ -8,31 +8,31 @@ from sqlalchemy import create_engine
 from flask_jwt_extended import JWTManager, jwt_required, create_access_token
 import logging
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
-users = {
-    'user1': 'password123'
-}
+users = {"user1": "password123"}
 
-tz = pytz.timezone('America/Chicago')
+tz = pytz.timezone("America/Chicago")
 
 cache = Cache()
 app = Flask(__name__)
-app.config['JWT_SECRET_KEY'] = 'your_jwt_secret_key_here'
+app.config["JWT_SECRET_KEY"] = "your_jwt_secret_key_here"
 jwt = JWTManager(app)
-cache.init_app(app, config={'CACHE_TYPE': 'SimpleCache'})
+cache.init_app(app, config={"CACHE_TYPE": "SimpleCache"})
 
-@app.route('/login', methods=['POST'])
+
+@app.route("/login", methods=["POST"])
 def login_():
     if not request.is_json:
         return jsonify({"info": "Bad request"}), 400
 
-    username = request.json.get('username', None)
-    password = request.json.get('password', None)
+    username = request.json.get("username", None)
+    password = request.json.get("password", None)
     logger.info("LOGIN HIT: %s %s", username, password)
 
-    
     if not username:
         return jsonify({"info": "Missing username parameter"}), 400
     if not password:
@@ -45,114 +45,126 @@ def login_():
     logger.info("Login successful for user: %s", username)
     return jsonify({"info": "Bad username or password"}), 401
 
-@cache.cached(timeout=60, key_prefix='get_state_from_df')
+
+@cache.cached(timeout=60, key_prefix="get_state_from_df")
 def get_state_from_df():
     try:
-        con = sqlite3.connect('payload_storage.db')
+        con = sqlite3.connect("payload_storage.db")
         df = pd.read_sql("SELECT * from payload_data", con)
-        df.rename(columns={'index':'Time Block'}, inplace=True)
-        df.set_index('Time Block')
-        df['Time Block'] = pd.to_datetime(df['Time Block']).dt.round(freq='T')
+        df.rename(columns={"index": "Time Block"}, inplace=True)
+        df.set_index("Time Block")
+        df["Time Block"] = pd.to_datetime(df["Time Block"]).dt.round(freq="T")
         utc_time = datetime.datetime.utcnow()
-        utc_time = utc_time.replace(tzinfo=pytz.UTC)   
-        corrected_time = utc_time.astimezone(tz) 
-        current_block = corrected_time.replace(minute=(corrected_time.minute - corrected_time.minute % 15), second=0, microsecond=0)
+        utc_time = utc_time.replace(tzinfo=pytz.UTC)
+        corrected_time = utc_time.astimezone(tz)
+        current_block = corrected_time.replace(
+            minute=(corrected_time.minute - corrected_time.minute % 15),
+            second=0,
+            microsecond=0,
+        )
         current_block_no_tz = current_block.replace(tzinfo=None)
 
-        matching_row = df[df['Time Block'] == current_block_no_tz]
+        matching_row = df[df["Time Block"] == current_block_no_tz]
 
         if not matching_row.empty:
-            date = matching_row.iloc[0]['Time Block']
-            info = f'timeblock is {date}'
+            date = matching_row.iloc[0]["Time Block"]
+            info = f"timeblock is {date}"
             response_obj = {
-                'status': 'success',
-                'info': info,
-                'server_time_corrected': str(corrected_time),
-                'timezone': str(tz),
-                'payload': matching_row.iloc[0]['Payload_Column_Name']
+                "status": "success",
+                "info": info,
+                "server_time_corrected": str(corrected_time),
+                "timezone": str(tz),
+                "payload": matching_row.iloc[0]["Payload_Column_Name"],
             }
-            logger.info(response_obj)   
+            logger.info(response_obj)
             return jsonify(response_obj), 200
         else:
             info = "timeblock not found"
             response_obj = {
-                'status': 'success',
-                'info': info,
-                'server_time_corrected': str(corrected_time),
-                'timezone': str(tz),
-                'payload': 0
+                "status": "success",
+                "info": info,
+                "server_time_corrected": str(corrected_time),
+                "timezone": str(tz),
+                "payload": 0,
             }
-            logger.info(response_obj)   
-            return jsonify(response_obj), 200   
+            logger.info(response_obj)
+            return jsonify(response_obj), 200
 
     except Exception as error:
         err = f"Internal Server Error - {error}"
         response_obj = {
-            'status': 'fail',
-            'info': err,
-            'server_time_corrected': str(corrected_time),
-            'timezone': str(tz),
-            'payload': 0
+            "status": "fail",
+            "info": err,
+            "server_time_corrected": str(corrected_time),
+            "timezone": str(tz),
+            "payload": 0,
         }
-        logger.error(response_obj)   
+        logger.error(response_obj)
         return jsonify(response_obj), 500
-    
-@cache.cached(timeout=60, key_prefix='get_state_from_df')
+
+
+@cache.cached(timeout=60, key_prefix="get_state_from_df")
 def get_state_from_df():
     try:
-        con = sqlite3.connect('payload_storage.db')
+        con = sqlite3.connect("payload_storage.db")
         df = pd.read_sql("SELECT * from payload_data", con)
-        df.rename(columns={'index':'Time Block'}, inplace=True)
-        df.set_index('Time Block')
-        df['Time Block'] = pd.to_datetime(df['Time Block']).dt.round(freq='T')
+        df.rename(columns={"index": "Time Block"}, inplace=True)
+        df.set_index("Time Block")
+        df["Time Block"] = pd.to_datetime(df["Time Block"]).dt.round(freq="T")
         utc_time = datetime.datetime.utcnow()
-        utc_time = utc_time.replace(tzinfo=pytz.UTC)   
-        corrected_time = utc_time.astimezone(tz) 
-        current_block = corrected_time.replace(minute=(corrected_time.minute - corrected_time.minute % 15), second=0, microsecond=0)
+        utc_time = utc_time.replace(tzinfo=pytz.UTC)
+        corrected_time = utc_time.astimezone(tz)
+        current_block = corrected_time.replace(
+            minute=(corrected_time.minute - corrected_time.minute % 15),
+            second=0,
+            microsecond=0,
+        )
         current_block_no_tz = current_block.replace(tzinfo=None)
 
-        matching_row = df[df['Time Block'] == current_block_no_tz]
+        matching_row = df[df["Time Block"] == current_block_no_tz]
 
         if not matching_row.empty:
-            date = matching_row.iloc[0]['Time Block']
-            info = f'timeblock is {date}'
+            date = matching_row.iloc[0]["Time Block"]
+            info = f"timeblock is {date}"
             response_obj = {
-                'status': 'success',
-                'info': info,
-                'server_time_corrected': str(corrected_time),
-                'timezone': str(tz),
-                'payload': matching_row.iloc[0]['Payload_Column_Name']
+                "status": "success",
+                "info": info,
+                "server_time_corrected": str(corrected_time),
+                "timezone": str(tz),
+                "payload": matching_row.iloc[0]["Payload_Column_Name"],
             }
-            logger.info(response_obj)   
+            logger.info(response_obj)
             return jsonify(response_obj), 200
         else:
             info = "timeblock not found"
             response_obj = {
-                'status': 'success',
-                'info': info,
-                'server_time_corrected': str(corrected_time),
-                'timezone': str(tz),
-                'payload': 0
+                "status": "success",
+                "info": info,
+                "server_time_corrected": str(corrected_time),
+                "timezone": str(tz),
+                "payload": 0,
             }
-            logger.info(response_obj)   
-            return jsonify(response_obj), 200   
+            logger.info(response_obj)
+            return jsonify(response_obj), 200
 
     except Exception as error:
         err = f"Internal Server Error - {error}"
         response_obj = {
-            'status': 'fail',
-            'info': err,
-            'server_time_corrected': str(corrected_time),
-            'timezone': str(tz),
-            'payload': 0
+            "status": "fail",
+            "info": err,
+            "server_time_corrected": str(corrected_time),
+            "timezone": str(tz),
+            "payload": 0,
         }
-        logger.error(response_obj)   
+        logger.error(response_obj)
         return jsonify(response_obj), 500
 
 
-@app.route('/payload/current', methods=['GET'])
+@app.route("/payload/current", methods=["GET"])
 def event_state_current():
-    cache_key = 'get_state_from_df'  # This should match the key_prefix in the @cache decorator
+    cache_key = (
+        "get_state_from_df"  # This should match the key_prefix in the @cache decorator
+    )
     cached_value = cache.get(cache_key)
     if cached_value:
         logger.info("Retrieving data from cache.")
@@ -162,7 +174,7 @@ def event_state_current():
         return get_state_from_df()
 
 
-@app.route('/update/data', methods=['POST'])
+@app.route("/update/data", methods=["POST"])
 @jwt_required()
 def json_payloader():
     try:
@@ -170,32 +182,33 @@ def json_payloader():
         logger.info("Update Data Request: \n%s", r)
         df = pd.read_json(r).T
 
-        engine = create_engine('sqlite:///payload_storage.db', echo=True)
+        engine = create_engine("sqlite:///payload_storage.db", echo=True)
         with engine.connect() as conn:
             sqlite_table = "payload_data"
-            df.to_sql(sqlite_table, conn, if_exists='replace')
+            df.to_sql(sqlite_table, conn, if_exists="replace")
 
         response_obj = {
-            'status': 'success',
-            'info': 'parsed and saved successfully',
-            'timezone_config': str(tz)
+            "status": "success",
+            "info": "parsed and saved successfully",
+            "timezone_config": str(tz),
         }
         return jsonify(response_obj), 200
 
     except Exception as error:
         response_obj = {
-            'status': 'fail',
-            'info': f"Internal Server Error - {error}",
-            'timezone_config': str(tz)
+            "status": "fail",
+            "info": f"Internal Server Error - {error}",
+            "timezone_config": str(tz),
         }
-        logger.error(response_obj)   
+        logger.error(response_obj)
         return jsonify(response_obj), 500
 
-@app.route('/')
+
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-if __name__ == '__main__':
-    #app.run(debug=True, port=5000, host='0.0.0.0')
+
+if __name__ == "__main__":
+    # app.run(debug=True, port=5000, host='0.0.0.0')
     app.run(debug=False, port=5000)
-
