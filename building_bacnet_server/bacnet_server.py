@@ -8,6 +8,7 @@ from bacpypes3.app import Application
 from bacpypes3.local.analog import AnalogValueObject
 from bacpypes3.local.binary import BinaryValueObject
 from bacpypes3.local.cmd import Commandable
+from bacpypes3.primitivedata import Null
 
 from bacpypes3.pdu import Address
 from bacpypes3.primitivedata import ObjectIdentifier
@@ -31,12 +32,12 @@ _log = ModuleLogger(globals())
 
 DR_SERVER_URL = "https://bensapi.pythonanywhere.com/payload/current"
 USE_DR_SERVER = True
-CLOUD_DR_SERVER_CHECK_SECONDS= 30
+CLOUD_DR_SERVER_CHECK_SECONDS= 10
 
 INTERVAL = 1.0
 BACNET_REQ_INTERVAL = 60.0
 WRITE_PRIORITY = 10
-DO_WRITES = False
+DO_WRITES = True # make BACnet writes to devices
 READ_REQUESTS = [
     {
         "device_address": "32:18",
@@ -266,6 +267,11 @@ class SampleApplication:
                 value,
                 priority,
             )
+            
+        if value == "null":
+            if priority is None:
+                raise ValueError("null only for overrides")
+            value = Null(())
         
         try:
             response = await self.app.write_property(
@@ -424,7 +430,7 @@ class SampleApplication:
                     for write_req in WRITE_REQUESTS:
                         
                         if write_req["technology_silo"] == "blinds":
-                            if write_req["tags"] == "demand response":
+                            if write_req["tags"] == "demand responce":
                                 # Write last server payload to the "demand response" point.
                                 # to Mecho window blind system AnalogValue
                                 await self.write_property_task(
@@ -546,9 +552,10 @@ class SampleApplication:
                         self.hvac_needs_to_be_released = False
                         self.room_setpoint_written = False
                         
-                    else:
-                        _log.debug("passing on BACnet writes DO_WRITES is %r", DO_WRITES)
-
+                    _log.debug("dr_event_active status  %r", self.dr_event_active)
+                    _log.debug("hvac_needs_to_be_released status %r", self.hvac_needs_to_be_released) 
+                    _log.debug("room_is_occupied status %r", self.room_is_occupied) 
+                        
                 except ErrorRejectAbortNack as err:
                     _log.error(f"Error while processing WRITE REQUESTS: {err}")
 

@@ -18,7 +18,7 @@ python -m pip install bacpypes3 aiohttp ifaddr
 
 Test script and use args to set BACnet device name and instance ID that comes by default with bacpypes3:
 ```bash
-python bacnet_server.py --name Slipstream --instance 3056672 --color --debug
+python bacnet_server.py --name Slipstream --instance 3056672 --address 10.7.6.201/24:47820 --debug
 ```
 
 If a different UDP port is required for the project use an arg like: `--address 192.168.13.14/24:47820`
@@ -116,7 +116,7 @@ sudo python -m pip install bacpypes3 aiohttp ifaddr
 
 # Troubleshooting
 
-If app runs but other OT platforms cannot see or integrate the app across the OT LAN, start with network `ping` and possibly even using a [BACnet scanning tool](https://www.ccontrols.com/sd/bdt.htm) from another device on the OT LAN. The link is to a free tool which runs on Windows made by contemporary controls where the app and `demand-response-level` BACnet point should come up on analog input 1 as shown below:
+* See `tester.py` else use a [BACnet scanning tool](https://www.ccontrols.com/sd/bdt.htm) from another device on the OT LAN. The link is to a free tool which runs on Windows made by contemporary controls where the app and `demand-response-level` BACnet point should come up on analog input 1 as shown below:
 
 
 ![Alt text](/images/bacnet_scan.jpg)

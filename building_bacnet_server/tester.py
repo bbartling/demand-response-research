@@ -4,6 +4,9 @@ Bens tester.
 run on static IP for UDP port 47820
 $ python3 tester.py --address 10.7.6.201/24:47820 --debug
 
+read priority arr of a point
+> read_point_priority_arr 32:18 analog-value,13
+
 test a read of a sensor
 > read 10.7.6.161/24:47820 analog-value,99 present-value
 > read 32:18 analog-value,14 present-value 
@@ -33,6 +36,8 @@ test read multiple
 discover points on device 201201
 > point_discovery 792000
 
+discover networks in the building
+> who_is_router_to_network
 """
 import sys
 import asyncio
@@ -42,6 +47,8 @@ from typing import Callable, List, Optional, Tuple
 
 from bacpypes3.pdu import Address, IPv4Address
 from bacpypes3.comm import bind
+
+from bacpypes3.basetypes  import PriorityArray, PriorityValue
 
 from bacpypes3.debugging import bacpypes_debugging, ModuleLogger
 from bacpypes3.argparse import SimpleArgumentParser
@@ -88,6 +95,54 @@ class SampleCmd(Cmd):
     """
 
     _debug: Callable[..., None]
+    
+    async def do_read_point_priority_arr(
+        self,
+        address: Address,
+        object_identifier: ObjectIdentifier,
+    ) -> None:
+        """
+        usage: read address objid prop[indx]
+        """
+        
+        if _debug:
+            _log.debug(
+                "do_read_point_priority_arr %r %r %r", address, object_identifier, 'priority-array'
+            )
+            
+
+        try:
+            response = await app.read_property(
+                address, object_identifier, 'priority-array'
+            )
+            if _debug:
+                _log.debug("    - len(response): %r", len(response))
+                _log.debug("    - response: %r", response)
+
+            if response:
+                _log.debug("Parsing response objects..")
+
+                # Define all possible attributes of PriorityValue based on your class definition
+                attributes = ['null', 'real', 'enumerated', 'unsigned', 'boolean', 'integer', 'double', 'time', 'characterString', 'octetString', 'bitString', 'date', 'objectidentifier', 'constructedValue', 'datetime']
+
+                for index, priority_value in enumerate(response):
+                
+                    for attr in attributes:
+                        val = getattr(priority_value, attr, None)
+                        if val is not None:
+                            if _debug:
+                                _log.debug(f"Priority level {index + 1}: {attr} = {val}")
+                            
+                            else:
+                                print(f"Priority level {index + 1}: {attr} = {val}")
+
+        except ErrorRejectAbortNack as err:
+            if _debug:
+                _log.debug("    - exception: %r", err)
+            
+        except Exception as e:
+            _log.error(f"Other error while doing operation: {e}")
+
 
     async def do_read(
         self,
@@ -124,6 +179,7 @@ class SampleCmd(Cmd):
             )
             if _debug:
                 _log.debug("    - property_value: %r", property_value)
+
         except ErrorRejectAbortNack as err:
             if _debug:
                 _log.debug("    - exception: %r", err)
@@ -166,6 +222,7 @@ class SampleCmd(Cmd):
         if not property_index_match:
             await self.response("property specification incorrect")
             return
+        
         property_identifier, property_array_index = property_index_match.groups()
         if property_array_index is not None:
             property_array_index = int(property_array_index)
@@ -439,7 +496,7 @@ class SampleCmd(Cmd):
 
                 except ErrorRejectAbortNack as err:
                     if show_warnings:
-                        sys.stderr.write(f"{device_identifier} description error: {err}\n")
+                        _log.error(f"{device_identifier} description error: {err}\n")
 
     async def do_point_discovery(
         self,
@@ -471,7 +528,7 @@ class SampleCmd(Cmd):
                 _log.debug("    - object_class: %r", object_class)
             if object_class is None:
                 if show_warnings:
-                    sys.stderr.write(f"unknown object type: {object_identifier}\n")
+                    _log.error(f"unknown object type: {object_identifier}\n")
                 continue
 
             _log.debug(f"    {object_identifier}:")
@@ -486,7 +543,7 @@ class SampleCmd(Cmd):
                     _log.debug("    - property_list: %r", property_list)
             except ErrorRejectAbortNack as err:
                 if show_warnings:
-                    sys.stderr.write(
+                    _log.error(
                         f"{object_identifier} property-list error: {err}\n"
                     )
 
@@ -506,7 +563,7 @@ class SampleCmd(Cmd):
                     property_class = object_class.get_property_type(property_identifier)
                     if property_class is None:
                         if show_warnings:
-                            sys.stderr.write(
+                            _log.error(
                                 f"{object_identifier} unknown property: {property_identifier}\n"
                             )
                         continue
@@ -520,7 +577,7 @@ class SampleCmd(Cmd):
 
                 except ErrorRejectAbortNack as err:
                     if show_warnings:
-                        sys.stderr.write(
+                        _log.error(
                             f"{object_identifier} {property_name} error: {err}\n"
                         )
     
@@ -549,11 +606,11 @@ class SampleCmd(Cmd):
         except AbortPDU as err:
             if err.apduAbortRejectReason != AbortReason.segmentationNotSupported:
                 if show_warnings:
-                    sys.stderr.write(f"{device_identifier} object-list abort: {err}\n")
+                    _log.error(f"{device_identifier} object-list abort: {err}\n")
                 return []
         except ErrorRejectAbortNack as err:
             if show_warnings:
-                sys.stderr.write(f"{device_identifier} object-list error/reject: {err}\n")
+                _log.error(f"{device_identifier} object-list error/reject: {err}\n")
             return []
 
         # fall back to reading the length and each element one at a time
@@ -578,7 +635,7 @@ class SampleCmd(Cmd):
                 object_list.append(object_identifier)
         except ErrorRejectAbortNack as err:
             if show_warnings:
-                sys.stderr.write(
+                _log.error(
                     f"{device_identifier} object-list length error/reject: {err}\n"
                 )
 
