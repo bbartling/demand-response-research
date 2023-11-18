@@ -2,7 +2,7 @@
 
 A value of `1` represents demand response `True` or a value of `0` represents a demand response `False` all in 15 minute time imcrements as shown below in the Excel file snip.
 
-![Alt text](/images/post_script.jpg)
+![Alt text](/images/post_script.JPG)
 
 # Overview
 This script will read the Excel file and post it across the internet to the DR server where ever it is running. 
