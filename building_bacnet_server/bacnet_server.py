@@ -15,8 +15,7 @@ from bacpypes3.apdu import ErrorRejectAbortNack
 
 import aiohttp
 
-# $ python3 bacnet_server.py --name Slipstream --instance 3056672 --color --debug
-
+# python3 ~/bacnet-demand-response-client-server/building_bacnet_server/bacnet_server.py --name Slipstream --instance 3056672 --address 10.7.6.201/24:47820 --debug
 
 # 'property[index]' matching
 property_index_re = re.compile(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$")
@@ -37,19 +36,20 @@ CLOUD_DR_SERVER_CHECK_SECONDS= 30
 INTERVAL = 1.0
 BACNET_REQ_INTERVAL = 60.0
 WRITE_PRIORITY = 10
+DO_WRITES = False
 READ_REQUESTS = [
     {
-        "device_address": "12345:2",
-        "object_identifier": "analog-value,302",
+        "device_address": "32:18",
+        "object_identifier": "analog-value,5",
         "property_identifier": "present-value",
         "property_array_index": None,
         "technology_silo": "hvac",
         "tags": "temp setpoint",
-        "note": "conference room 241"
+        "note": "this is different than the WRITE setpoint"
     },
     {
-        "device_address": "12345:2",
-        "object_identifier": "analog-input,2",
+        "device_address": "32:18",
+        "object_identifier": "analog-input,1",
         "property_identifier": "present-value",
         "property_array_index": None,
         "technology_silo": "hvac",
@@ -57,29 +57,29 @@ READ_REQUESTS = [
         "note": "conference room 241"
     },
     {
-        "device_address": "12345:6",
-        "object_identifier": "binary-value,806",
+        "device_address": "32:18",
+        "object_identifier": "analog-input,8",
         "property_identifier": "present-value",
         "property_array_index": None,
-        "technology_silo": "lighting",
+        "technology_silo": "hvac",
         "tags": "occupancy sensor point",
-        "note": "conference room 241"
+        "note": "using CO2 as occ"
     }
 ]
 
 WRITE_REQUESTS = [
     {
-        "device_address": "12345:2",
-        "object_identifier": "analog-value,302",
+        "device_address": "32:18",
+        "object_identifier": "analog-value,14",
         "property_identifier": "present-value",
         "property_array_index": None,
         "technology_silo": "hvac",
         "tags": "temp setpoint",
-        "note": "conference room 241"
+        "note": "this is different than the READ setpoint"
     },
     {
-        "device_address": "12345:2",
-        "object_identifier": "analog-value,300",
+        "device_address": "32:18",
+        "object_identifier": "analog-value,13",
         "property_identifier": "present-value",
         "property_array_index": None,
         "technology_silo": "hvac",
@@ -87,8 +87,8 @@ WRITE_REQUESTS = [
         "note": "conference room 241"
     },
     {
-        "device_address": "12345:2",
-        "object_identifier": "analog-value,300",
+        "device_address": "32:18",
+        "object_identifier": "analog-output,2",
         "property_identifier": "present-value",
         "property_array_index": None,
         "technology_silo": "hvac",
@@ -96,8 +96,8 @@ WRITE_REQUESTS = [
         "note": "conference room 241"
     },
     {
-        "device_address": "12345:6",
-        "object_identifier": "analog-value,301",
+        "device_address": "10.7.6.161/24:47820",
+        "object_identifier": "analog-value,99",
         "property_identifier": "present-value",
         "property_array_index": None,
         "technology_silo": "blinds",
@@ -105,14 +105,30 @@ WRITE_REQUESTS = [
         "note": "conference room 241"
     },
     {
-        "device_address": "12345:6",
-        "object_identifier": "analog-value,302",
+        "device_address": "10.7.6.161/24:47820",
+        "object_identifier": "analog-value,98",
         "property_identifier": "present-value",
+        "property_array_index": None,
+        "technology_silo": "blinds",
+        "tags": "occupancy signal",
+        "note": "conference room 241"
+    },
+    {
+        "device_address": "10.7.6.161/24:47820",
+        "object_identifier": "analog-value,97",
+        "property_identifier": "present-value",
+        "property_array_index": None,
         "technology_silo": "blinds",
         "tags": "heating or cooling",
         "note": "conference room 241"
     }
 ]
+
+''' NOTES
+HVAC is AV 97, heat is a 0.0 and cooling is a 1.0
+OCC is AV 98, unoc is a 0.0 and occ is a 1.0
+DR is AV 99, normal is a 0.0 and DR EVENT is a 1.0
+'''
 
 @bacpypes_debugging
 class SampleApplication:
@@ -136,10 +152,19 @@ class SampleApplication:
         self.app.add_object(app_status)
         
         # demand resp server payload from cloud
+        self.dr_event_active = False
         self.last_server_payload = 0
+        self.current_server_payload = 0
         self.hvac_setpoint_adj = 1.5
         self.hvac_needs_to_be_released = False
         self.room_setpoint_written = False
+        
+        # for mecho
+        # 0 = heating and 1 = cooling
+        self.hvac_mode = 0
+        self.ppm_for_occ = 600
+        self.room_is_occupied = False
+        self.occ_to_write = 0.0
 
         # create a task to update the values
         asyncio.create_task(self.update_bacnet_server_values())
@@ -157,11 +182,29 @@ class SampleApplication:
                     async with session.get(DR_SERVER_URL) as response:
                         if response.status == 200:
                             server_data = await response.json()
+                            
                             async with self.server_check_lock:
-                                self.last_server_payload = server_data.get("payload", 0)
-                            _log.info(f"Received cloud DR server response: {self.last_server_payload}")
+                                self.current_server_payload = server_data.get("payload", 0)
+                            _log.info(f"Received cloud DR server response: {self.current_server_payload}")
+                            
+                            if self.last_server_payload != self.current_server_payload:
+                                _log.info(f" DR EVENT SIGNAL CHANGE")
+                                
+                                if self.current_server_payload == 1:
+                                    _log.info(f" SETTING DR EVENT TRUE")
+                                    self.dr_event_active = True
+                                    
+                                elif self.current_server_payload == 0:
+                                    _log.info(f" SETTING DR EVENT FALSE")
+                                    self.dr_event_active = False
+                                    
+                                else: # default to false if the payload value is incorrect
+                                    self.dr_event_active = False
+                                
+                                self.last_server_payload = self.current_server_payload
                         else:
                             _log.warning(f"Cloud DR Server returned status code {response.status}")
+                            
             except aiohttp.ClientError as e:
                 # Handle network errors and retry after a delay
                 _log.error(f"Error while fetching Cloud DR server response: {e}")
@@ -173,7 +216,7 @@ class SampleApplication:
 
     async def share_data_to_bacnet_server(self):
         async with self.server_check_lock:
-            return self.last_server_payload
+            return self.current_server_payload
         
     async def update_bacnet_server_values(self):
         while True:
@@ -249,13 +292,9 @@ class SampleApplication:
             
             # Create a list to store read values
             read_values = []
-            
-            # for mecho
-            # 0 = heating and 1 = cooling
-            hvac_mode = 0
 
             for req in READ_REQUESTS:
-                _log.debug("READ_REQUESTS GO!!!")
+                _log.debug(" READ_REQUESTS GO!!!")
                 _log.debug("    - req: %r", req)
 
                 try:
@@ -279,6 +318,7 @@ class SampleApplication:
                             req["property_identifier"],
                             req["property_array_index"],
                         )
+                        
                         _log.debug("    - hvac_setpoint_value: %r", hvac_setpoint_value)
                         read_values.append(hvac_setpoint_value)
 
@@ -302,6 +342,7 @@ class SampleApplication:
                             req["property_identifier"],
                             req["property_array_index"],
                         )
+                        
                         _log.debug("    - hvac_temp_value: %r", hvac_temp_value)
                         read_values.append(hvac_temp_value)
 
@@ -319,141 +360,200 @@ class SampleApplication:
                                 req["property_array_index"]
                             )
                             
-                        room_is_occupied = await self.app.read_property(
+                        ppm = await self.app.read_property(
                             occupancy_address,
                             occupancy_identifier,
                             req["property_identifier"],
                             req["property_array_index"],
                         )
-                        _log.debug("    - room_is_occupied: %r", room_is_occupied)
-                        read_values.append(room_is_occupied)
-
+                        
+                        if ppm > self.ppm_for_occ:
+                            self.room_is_occupied = True
+                            
+                        _log.debug("    - ppm: %r", ppm)
+                        _log.debug("    - self.room_is_occupied: %r", self.room_is_occupied)
+                        read_values.append(self.room_is_occupied)
+                    
                 except ErrorRejectAbortNack as err:
-                    _log.error(f"Error while processing read request: {err}")
+                    _log.error(f"Error while processing READ REQUESTS: {err}")
+
+                except Exception as e:
+                    _log.error(f"An unexpected error occurred on READ REQUESTS: {e}")
 
             # Calculate HVAC mode based on temperature and setpoint
-            hvac_setpoint_value, hvac_temp_value, room_is_occupied = read_values
-            _log.debug("READ LOOP FINISHED")
-            _log.debug("    - read_values: %r %r %r", hvac_setpoint_value, hvac_temp_value, room_is_occupied)
+            hvac_setpoint_value, hvac_temp_value, self.room_is_occupied = read_values
+            _log.debug("    - read_values: %r %r %r", hvac_setpoint_value, hvac_temp_value, self.room_is_occupied)
 
+            # mecho requires an AV for occupancy
+            if self.room_is_occupied:
+                self.occ_to_write = 1.0
+            else:
+                self.occ_to_write = 0.0
             
-            if not self.room_setpoint_written:
-                if hvac_temp_value > hvac_setpoint_value:
-                    hvac_mode = 1
-                    hvac_setpoint_value += self.hvac_setpoint_adj
-                else:
-                    hvac_mode = 0
-                    hvac_setpoint_value -= self.hvac_setpoint_adj
-                    
-                self.room_setpoint_written = True
+            if hvac_temp_value > hvac_setpoint_value:
+                # for mecho window blinds, write continuously
+                self.hvac_mode = 1.0 
+            else:
+                # for mecho window blinds, write continuously
+                self.hvac_mode = 0.0 
                 
-            _log.debug("    - hvac_mode: %r", hvac_mode)
+            _log.debug("    - self.hvac_mode: %r", self.hvac_mode)
             _log.debug("    - hvac_setpoint_value: %r", hvac_setpoint_value)
+            
+            if self.dr_event_active:
 
-            # Iterate through WRITE_REQUESTS
-            # always be writing to mecho doesn't need to be released
-            for write_req in WRITE_REQUESTS:
-                if write_req["technology_silo"] == "blinds":
-                    if write_req["tags"] == "demand response":
-                        # Write last server payload to the "demand response" point.
-                        await self.write_property_task(
-                            Address(write_req["device_address"]),
-                            ObjectIdentifier(write_req["object_identifier"]),
-                            write_req["property_identifier"],
-                            self.last_server_payload,
-                        )
-                    if write_req["tags"] == "heating or cooling":
-                        # Write hvac_mode to the "heating or cooling" point.
-                        await self.write_property_task(
-                            Address(write_req["device_address"]),
-                            ObjectIdentifier(write_req["object_identifier"]),
-                            write_req["property_identifier"],
-                            hvac_mode,
-                        )
+                if not self.room_setpoint_written:
+                    # for Trane HVAC write, calc new setpoint and write only once
+                    hvac_setpoint_value += self.hvac_setpoint_adj 
+                    self.room_setpoint_written = True
+                    _log.debug("    - new hvac_setpoint_value: %r", hvac_setpoint_value)
+                    
+                if not self.room_setpoint_written:
+                    # for Trane HVAC write, calc new setpoint and write only once
+                    hvac_setpoint_value -= self.hvac_setpoint_adj
+                    self.room_setpoint_written = True
+                    _log.debug("    - new hvac_setpoint_value: %r", hvac_setpoint_value)
 
-                # if demand response adjust hvac setpoint only if rm is occupied
-                if self.last_server_payload == 1 and room_is_occupied:
-                    _log.debug("    - last_server_payload is 1")
-                    if write_req["technology_silo"] == "hvac":
-                        # Adjust setpoint based on the mode and demand response.
-                        if write_req["tags"] == "temp setpoint":
-                            await self.write_property_task(
-                                Address(write_req["device_address"]),
-                                ObjectIdentifier(write_req["object_identifier"]),
-                                write_req["property_identifier"],
-                                hvac_setpoint_value,
-                            )
-                        if write_req["tags"] == "air flow setpoint":
-                            await self.write_property_task(
-                                Address(write_req["device_address"]),
-                                ObjectIdentifier(write_req["object_identifier"]),
-                                write_req["property_identifier"],
-                                0  # "null", bacnet release
-                            )
-                        if write_req["tags"] == "chilled beam valve":
-                            await self.write_property_task(
-                                Address(write_req["device_address"]),
-                                ObjectIdentifier(write_req["object_identifier"]),
-                                write_req["property_identifier"],
-                                0  # "null", bacnet release
-                            )
-                        self.hvac_needs_to_be_released = True
+            _log.debug(" READ LOOP FINISHED")
+            
+            if DO_WRITES:
+                
+                try:
+                    # Iterate through WRITE_REQUESTS
+                    # always be writing to mecho doesn't need to be released
+                    for write_req in WRITE_REQUESTS:
+                        
+                        if write_req["technology_silo"] == "blinds":
+                            if write_req["tags"] == "demand response":
+                                # Write last server payload to the "demand response" point.
+                                # to Mecho window blind system AnalogValue
+                                await self.write_property_task(
+                                    Address(write_req["device_address"]),
+                                    ObjectIdentifier(write_req["object_identifier"]),
+                                    write_req["property_identifier"],
+                                    self.current_server_payload,
+                                )
+                                
+                            if write_req["tags"] == "occupancy signal":
+                                # Write self.occ_to_write to the "heating or cooling" point.
+                                # to Mecho window blind system AnalogValue
+                                await self.write_property_task(
+                                    Address(write_req["device_address"]),
+                                    ObjectIdentifier(write_req["object_identifier"]),
+                                    write_req["property_identifier"],
+                                    self.occ_to_write,
+                                )
+                                
+                            if write_req["tags"] == "heating or cooling":
+                                # Write self.hvac_mode to the "heating or cooling" point.
+                                # to Mecho window blind system AnalogValue
+                                await self.write_property_task(
+                                    Address(write_req["device_address"]),
+                                    ObjectIdentifier(write_req["object_identifier"]),
+                                    write_req["property_identifier"],
+                                    self.hvac_mode,
+                                )
 
-                # if demand resp and not occupied close air damper and chilled beam valve
-                if self.last_server_payload == 1 and not room_is_occupied:
-                    if write_req["technology_silo"] == "hvac":
-                        # Adjust setpoint based on the mode and demand response.
-                        if write_req["tags"] == "temp setpoint":
-                            await self.write_property_task(
-                                Address(write_req["device_address"]),
-                                ObjectIdentifier(write_req["object_identifier"]),
-                                write_req["property_identifier"],
-                                0  # "null", bacnet release
-                            )
-                        if write_req["tags"] == "air flow setpoint":
-                            await self.write_property_task(
-                                Address(write_req["device_address"]),
-                                ObjectIdentifier(write_req["object_identifier"]),
-                                write_req["property_identifier"],
-                                0,
-                            )
-                        if write_req["tags"] == "chilled beam valve":
-                            await self.write_property_task(
-                                Address(write_req["device_address"]),
-                                ObjectIdentifier(write_req["object_identifier"]),
-                                write_req["property_identifier"],
-                                0,
-                            )
-                        self.hvac_needs_to_be_released = True
+                        # if demand response adjust hvac setpoint only if rm is occupied
+                        if self.dr_event_active and self.room_is_occupied:
+                            _log.debug(" DR EVENT ACTIVE Room is occupied")
+                            
+                            if write_req["technology_silo"] == "hvac":
+                                # Adjust setpoint based on the mode and demand response.
+                                if write_req["tags"] == "temp setpoint":
+                                    await self.write_property_task(
+                                        Address(write_req["device_address"]),
+                                        ObjectIdentifier(write_req["object_identifier"]),
+                                        write_req["property_identifier"],
+                                        hvac_setpoint_value,
+                                    )
+                                    
+                                if write_req["tags"] == "air flow setpoint":
+                                    await self.write_property_task(
+                                        Address(write_req["device_address"]),
+                                        ObjectIdentifier(write_req["object_identifier"]),
+                                        write_req["property_identifier"],
+                                        "null"  # bacnet release
+                                    )
+                                    
+                                if write_req["tags"] == "chilled beam valve":
+                                    await self.write_property_task(
+                                        Address(write_req["device_address"]),
+                                        ObjectIdentifier(write_req["object_identifier"]),
+                                        write_req["property_identifier"],
+                                        "null"  # bacnet release
+                                    )
+                                    
+                                self.hvac_needs_to_be_released = True
 
-            # if no demand response release all HVAC one last time
-            if self.last_server_payload == 0 and self.hvac_needs_to_be_released:
-                for write_req in WRITE_REQUESTS:
-                    if write_req["technology_silo"] == "hvac":
-                        # Adjust setpoint based on the mode and demand response.
-                        if write_req["tags"] == "temp setpoint":
-                            await self.write_property_task(
-                                Address(write_req["device_address"]),
-                                ObjectIdentifier(write_req["object_identifier"]),
-                                write_req["property_identifier"],
-                                0  # "null", bacnet release
-                            )
-                        if write_req["tags"] == "air flow setpoint":
-                            await self.write_property_task(
-                                Address(write_req["device_address"]),
-                                ObjectIdentifier(write_req["object_identifier"]),
-                                write_req["property_identifier"],
-                                0  # "null", bacnet release
-                            )
-                        if write_req["tags"] == "chilled beam valve":
-                            await self.write_property_task(
-                                Address(write_req["device_address"]),
-                                ObjectIdentifier(write_req["object_identifier"]),
-                                write_req["property_identifier"],
-                                0  # "null", bacnet release
-                            )
-                self.hvac_needs_to_be_released = False
-                self.room_setpoint_written = False
+                        # if demand resp and not occupied close air damper and chilled beam valve
+                        if self.dr_event_active and not self.room_is_occupied:
+                            _log.debug(" DR EVENT ACTIVE Room is not occupied")
+                            
+                            if write_req["technology_silo"] == "hvac":
+                                # Adjust setpoint based on the mode and demand response.
+                                if write_req["tags"] == "temp setpoint":
+                                    await self.write_property_task(
+                                        Address(write_req["device_address"]),
+                                        ObjectIdentifier(write_req["object_identifier"]),
+                                        write_req["property_identifier"],
+                                        "null"  # bacnet release
+                                    )
+                                if write_req["tags"] == "air flow setpoint":
+                                    await self.write_property_task(
+                                        Address(write_req["device_address"]),
+                                        ObjectIdentifier(write_req["object_identifier"]),
+                                        write_req["property_identifier"],
+                                        0,
+                                    )
+                                if write_req["tags"] == "chilled beam valve":
+                                    await self.write_property_task(
+                                        Address(write_req["device_address"]),
+                                        ObjectIdentifier(write_req["object_identifier"]),
+                                        write_req["property_identifier"],
+                                        0,
+                                    )
+                                self.hvac_needs_to_be_released = True
+
+                    # if no demand response release all HVAC one last time
+                    if not self.dr_event_active and self.hvac_needs_to_be_released:
+                        for write_req in WRITE_REQUESTS:
+                            if write_req["technology_silo"] == "hvac":
+                                _log.debug(" DR EVENT NOT ACTIVE Releasing all HVAC")
+                                
+                                # Adjust setpoint based on the mode and demand response.
+                                if write_req["tags"] == "temp setpoint":
+                                    await self.write_property_task(
+                                        Address(write_req["device_address"]),
+                                        ObjectIdentifier(write_req["object_identifier"]),
+                                        write_req["property_identifier"],
+                                        "null"  # bacnet release
+                                    )
+                                if write_req["tags"] == "air flow setpoint":
+                                    await self.write_property_task(
+                                        Address(write_req["device_address"]),
+                                        ObjectIdentifier(write_req["object_identifier"]),
+                                        write_req["property_identifier"],
+                                        "null"  # bacnet release
+                                    )
+                                if write_req["tags"] == "chilled beam valve":
+                                    await self.write_property_task(
+                                        Address(write_req["device_address"]),
+                                        ObjectIdentifier(write_req["object_identifier"]),
+                                        write_req["property_identifier"],
+                                        "null"  # bacnet release
+                                    )
+                        self.hvac_needs_to_be_released = False
+                        self.room_setpoint_written = False
+                        
+                    else:
+                        _log.debug("passing on BACnet writes DO_WRITES is %r", DO_WRITES)
+
+                except ErrorRejectAbortNack as err:
+                    _log.error(f"Error while processing WRITE REQUESTS: {err}")
+
+                except Exception as e:
+                    _log.error(f"An unexpected error occurred on WRITE REQUESTS: {e}")
 
 
 async def main():
