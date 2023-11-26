@@ -1,0 +1,50 @@
+ven_name: "some_ven_id"
+vtn_url: "https://some-openadr-server/OpenADR2/Simple/2.0b"
+normal_operations: 0.0
+ven_to_vtn_check_interval_seconds: 10
+bacnet_server_update_interval_seconds: 1.0
+meter_read_interval_seconds: 60.0
+do_bacnet_writes_on_event_true: True
+load_shed_write_requests:
+
+  # TAG not used, maybe in future versions for an algorithm
+  - device_address: "10.200.200.27/24"
+    object_identifier: "binary-output,5"
+    property_identifier: "present-value"
+    write_value: "inactive"
+    write_priority: 5
+    technology_silo: "hvac"
+    tags: "cooling command" 
+    note: "RTU cooling Command Stage 3"
+
+  - device_address: "10.200.200.27/24"
+    object_identifier: "binary-output,6"
+    property_identifier: "present-value"
+    write_value: "inactive"
+    write_priority: 5
+    technology_silo: "hvac"
+    write_value: "inactive"
+    tags: "cooling command"
+    note: "RTU cooling Command Stage 4"
+
+  - device_address: "10.200.200.27/24"
+    object_identifier: "analog-output,1"
+    property_identifier: "present-value"
+    write_value: 30.0
+    write_priority: 5
+    technology_silo: "hvac"
+    tags: "fan speed command"
+    note: "RTU VFD Fan Speed"
+
+# sent from open ADR client to VTN server during checkin's
+meter_value_open_adr_report:
+  - device_address: "10.200.200.196/24"
+    object_identifier: "analog-input,524297"
+    property_identifier: "present-value"
+    technology_silo: "metering"
+    tags: "power meter"
+    note: "egauge REGCHG p_mdp_panel_total"
+    protocol: "BACnet"
+
+
+

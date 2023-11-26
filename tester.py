@@ -6,35 +6,42 @@ $ python3 tester.py --address 10.7.6.201/24:47820 --debug
 
 read priority arr of a point
 > read_point_priority_arr 32:18 analog-value,13
+> read_point_priority_arr 10.200.200.27/24 binary-output,5
 
 test a read of a sensor
 > read 10.7.6.161/24:47820 analog-value,99 present-value
-> read 32:18 analog-value,14 present-value 
+> read 32:18 analog-value,14 present-value
+> read 10.200.200.27/24 binary-output,5 present-value 
 
 test a write of a point and a release on priority 10
 > write 32:18 analog-value,14 present-value null 10
 > write 32:18 analog-value,14 present-value 72.0 10
 > write 32:18 analog-output,2 present-value null 10
 > write 32:18 analog-output,2 present-value 0.0 10
+> write 10.200.200.27/24 binary-output,5 present-value inactive 16
+> write 10.200.200.27/24 binary-output,5 present-value null 16
 
 test whois on MSTP devices 2 and 6 on network 12345 with inst hi and low
 test whois global with the * 
 > whois 12345:2 1 999999
 > whois 12345:6 1 999999
 > whois 10.7.6.161/24:47820 792000
+> whois 999 99999
+> whois 999 99999
 
 test whohas
 > whohas analog-value,302 12345:2
 > whohas analog-value,302 *
 > whohas 1 2345 analog-value,302
 > whohas analog-value,302 10.7.6.161/24:47820
+> whohas "ZN-T"
 
 test read multiple
 > rpm 32:18 analog-output,2 present-value analog-value,14 present-value
 > rpm 10.7.6.161/24:47820 analog-value,99 present-value analog-value,1 present-value
 
 discover points on device 201201
-> point_discovery 792000
+> point_discovery 1100
 
 discover networks in the building
 > who_is_router_to_network
@@ -48,7 +55,8 @@ from typing import Callable, List, Optional, Tuple
 from bacpypes3.pdu import Address, IPv4Address
 from bacpypes3.comm import bind
 
-from bacpypes3.basetypes import PriorityArray, PriorityValue
+from bacpypes3.primitivedata import Integer
+from bacpypes3.basetypes import PriorityValue
 
 from bacpypes3.debugging import bacpypes_debugging, ModuleLogger
 from bacpypes3.argparse import SimpleArgumentParser
@@ -56,7 +64,7 @@ from bacpypes3.app import Application
 from bacpypes3.console import Console
 from bacpypes3.cmd import Cmd
 from bacpypes3.primitivedata import Null, CharacterString, ObjectIdentifier
-from bacpypes3.npdu import IAmRouterToNetwork, InitializeRoutingTableAck
+from bacpypes3.npdu import IAmRouterToNetwork
 from bacpypes3.comm import bind
 from typing import Callable, Optional, List
 from bacpypes3.constructeddata import AnyAtomic
@@ -130,36 +138,17 @@ class SampleCmd(Cmd):
             if response:
                 _log.debug("Parsing response objects..")
 
-                # Define all possible attributes of PriorityValue based on your class definition
-                attributes = [
-                    "null",
-                    "real",
-                    "enumerated",
-                    "unsigned",
-                    "boolean",
-                    "integer",
-                    "double",
-                    "time",
-                    "characterString",
-                    "octetString",
-                    "bitString",
-                    "date",
-                    "objectidentifier",
-                    "constructedValue",
-                    "datetime",
-                ]
-
                 for index, priority_value in enumerate(response):
-                    for attr in attributes:
-                        val = getattr(priority_value, attr, None)
-                        if val is not None:
-                            if _debug:
-                                _log.debug(
-                                    f"Priority level {index + 1}: {attr} = {val}"
-                                )
+                    value_type = priority_value._choice
+                    value = getattr(priority_value, value_type, None)
 
-                            else:
-                                print(f"Priority level {index + 1}: {attr} = {val}")
+                    if value is not None:
+                        if _debug:
+                            _log.debug(
+                                f"Priority level {index + 1}: {value_type} = {value}"
+                            )
+                        else:
+                            print(f"Priority level {index + 1}: {value_type} = {value}")
 
         except ErrorRejectAbortNack as err:
             if _debug:
@@ -167,6 +156,53 @@ class SampleCmd(Cmd):
 
         except Exception as e:
             _log.error(f"Other error while doing operation: {e}")
+            
+    async def do_read_point_names(
+        self,
+        address: Address,
+    ) -> None:
+        """
+        usage: read address objid prop[indx]
+        """
+        # read the property list
+        property_list: Optional[List[PropertyIdentifier]] = None
+        try:
+            property_list = await app.read_property(
+                address, object_identifier, "property-list"
+            )
+            if _debug:
+                _log.debug("    - property_list: %r", property_list)
+        except ErrorRejectAbortNack as err:
+            if show_warnings:
+                _log.error(f"{object_identifier} property-list error: {err}\n")
+                    
+        for object_identifier in property_list:
+            
+            if _debug:
+                _log.debug(
+                    "do_read_point_names %r %r %r",
+                    address,
+                    object_identifier,
+                    "object-name",
+                )
+
+            try:
+                response = await app.read_property(
+                    address, object_identifier, "object-name"
+                )
+                if _debug:
+                    _log.debug("    - len(response): %r", len(response))
+                    _log.debug("    - response: %r", response)
+
+                _log.debug(response) # 10.200.200.27/24 binary-output,1
+
+            except ErrorRejectAbortNack as err:
+                if _debug:
+                    _log.debug("    - exception: %r", err)
+
+            except Exception as e:
+                _log.error(f"Other error while doing operation: {e}")
+
 
     async def do_read(
         self,
@@ -191,7 +227,6 @@ class SampleCmd(Cmd):
         # split the property identifier and its index
         property_index_match = property_index_re.match(property_identifier)
         if not property_index_match:
-            await self.response("property specification incorrect")
             return
 
         # split the property identifier and its index
@@ -218,7 +253,10 @@ class SampleCmd(Cmd):
                 _log.debug("    - schedule objects")
             property_value = property_value.get_value()
 
-        await self.response(str(property_value))
+        if _debug:
+            _log.debug(str(property_value))
+        else:
+            print(f"{str(property_value)}")
 
     async def do_write(
         self,
@@ -248,7 +286,10 @@ class SampleCmd(Cmd):
         # split the property identifier and its index
         property_index_match = property_index_re.match(property_identifier)
         if not property_index_match:
-            await self.response("property specification incorrect")
+            if _debug:
+                _log.debug(str("property specification incorrect"))
+            else:
+                print(f"{str("property specification incorrect")}")
             return
 
         property_identifier, property_array_index = property_index_match.groups()
@@ -276,7 +317,6 @@ class SampleCmd(Cmd):
         except ErrorRejectAbortNack as err:
             if _debug:
                 _log.debug("    - exception: %r", err)
-            await self.response(str(err))
 
     async def do_iam(
         self,
@@ -351,14 +391,18 @@ class SampleCmd(Cmd):
             low_limit, high_limit, object_identifier, object_name, address
         )
         if not i_haves:
-            await self.response("No response(s)")
+            if _debug:
+                _log.debug("No response(s)")
+            else:
+                print("No response(s)")
         else:
             for i_have in i_haves:
                 if _debug:
                     _log.debug("    - i_have: %r", i_have)
-                await self.response(
-                    f"{i_have.deviceIdentifier[1]} {i_have.objectIdentifier} {i_have.objectName!r}"
-                )
+                    if _debug:
+                        _log.debug(f"{i_have.deviceIdentifier[1]} {i_have.objectIdentifier} {i_have.objectName!r}")
+                    else:
+                        print(f"{i_have.deviceIdentifier[1]} {i_have.objectIdentifier} {i_have.objectName!r}")
 
     async def do_ihave(
         self,
@@ -409,7 +453,10 @@ class SampleCmd(Cmd):
             object_identifier = vendor_info.object_identifier(args_list.pop(0))
             object_class = vendor_info.get_object_class(object_identifier[0])
             if not object_class:
-                await self.response(f"unrecognized object type: {object_identifier}")
+                if _debug:
+                    _log.debug(f"unrecognized object type: {object_identifier}")
+                else:
+                    print(f"unrecognized object type: {object_identifier}")
                 return
 
             # save this as a parameter
@@ -436,9 +483,10 @@ class SampleCmd(Cmd):
                     if _debug:
                         _log.debug("    - property_type: %r", property_type)
                     if not property_type:
-                        await self.response(
-                            f"unrecognized property: {property_reference.propertyIdentifier}"
-                        )
+                        if _debug:
+                            _log.debug(f"unrecognized property: {property_reference.propertyIdentifier}")
+                        else:
+                            print(f"unrecognized property: {property_reference.propertyIdentifier}")
                         return
 
                 # save this as a parameter
@@ -454,7 +502,11 @@ class SampleCmd(Cmd):
         if _debug:
             _log.debug("    - parameter_list: %r", parameter_list)
         if not parameter_list:
-            await self.response("object identifier expected")
+            if _debug:
+                _log.debug("object identifier expected")
+            else:
+                print("object identifier expected")
+            
             return
 
         try:
@@ -464,7 +516,6 @@ class SampleCmd(Cmd):
         except ErrorRejectAbortNack as err:
             if _debug:
                 _log.debug("    - exception: %r", err)
-            await self.response(str(err))
             return
 
         # dump out the results
@@ -500,7 +551,11 @@ class SampleCmd(Cmd):
 
         i_ams = await app.who_is(low_limit, high_limit)
         if not i_ams:
-            await self.response("No response(s)")
+            if _debug:
+                _log.debug("No response(s)")
+            else:
+                print("No response(s)")
+                
         else:
             for i_am in i_ams:
                 if _debug:
@@ -508,14 +563,20 @@ class SampleCmd(Cmd):
 
                 device_address: Address = i_am.pduSource
                 device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
-                _log.debug(f"{device_identifier} @ {device_address}")
+                if _debug:
+                    _log.debug(f"{device_identifier} @ {device_address}")
+                else:
+                    print(f"{device_identifier} @ {device_address}")
 
                 try:
                     device_description: str = await app.read_property(
                         device_address, device_identifier, "description"
                     )
-                    _log.debug(f"    description: {device_description}")
-
+                    if _debug:
+                        _log.debug(f"    description: {device_description}")
+                    else:
+                        print(f"description: {device_description}")
+                    
                 except ErrorRejectAbortNack as err:
                     if show_warnings:
                         _log.error(f"{device_identifier} description error: {err}\n")
@@ -542,88 +603,13 @@ class SampleCmd(Cmd):
         vendor_info = get_vendor_info(i_am.vendorID)
         if _debug:
             _log.debug("    - vendor_info: %r", vendor_info)
+            
+        object_list = []
 
-        object_list = await self.object_identifiers(
-            app, device_address, device_identifier
-        )
-        for object_identifier in object_list:
-            object_class = vendor_info.get_object_class(object_identifier[0])
-            if _debug:
-                _log.debug("    - object_class: %r", object_class)
-            if object_class is None:
-                if show_warnings:
-                    _log.error(f"unknown object type: {object_identifier}\n")
-                continue
-
-            _log.debug(f"    {object_identifier}:")
-
-            # read the property list
-            property_list: Optional[List[PropertyIdentifier]] = None
-            try:
-                property_list = await app.read_property(
-                    device_address, object_identifier, "property-list"
-                )
-                if _debug:
-                    _log.debug("    - property_list: %r", property_list)
-            except ErrorRejectAbortNack as err:
-                if show_warnings:
-                    _log.error(f"{object_identifier} property-list error: {err}\n")
-
-            for property_name in (
-                "object-name",
-                "description",
-                "present-value",
-                "units",
-            ):
-                try:
-                    # don't bother attempting to read the property if the object
-                    # doesn't say it exists
-                    property_identifier = PropertyIdentifier(property_name)
-                    if property_list and property_identifier not in property_list:
-                        continue
-
-                    property_class = object_class.get_property_type(property_identifier)
-                    if property_class is None:
-                        if show_warnings:
-                            _log.error(
-                                f"{object_identifier} unknown property: {property_identifier}\n"
-                            )
-                        continue
-                    if _debug:
-                        _log.debug("    - property_class: %r", property_class)
-
-                    property_value = await app.read_property(
-                        device_address, object_identifier, property_identifier
-                    )
-                    _log.debug(f" {property_name}: {property_value}")
-
-                except ErrorRejectAbortNack as err:
-                    if show_warnings:
-                        _log.error(
-                            f"{object_identifier} {property_name} error: {err}\n"
-                        )
-
-    async def object_identifiers(
-        self,
-        app,
-        device_address: Address,
-        device_identifier: ObjectIdentifier,
-    ) -> List[ObjectIdentifier]:
-        """
-        Read the entire object list from a device at once, or if that fails, read
-        the object identifiers one at a time.
-        """
-        _log.debug("object_identifiers hit")
-        _log.debug("object_identifiers - device_address: %r", device_address)
-        _log.debug("object_identifiers - device_identifier: %r", device_identifier)
-
-        # try reading the whole thing at once, but it might be too big and
-        # segmentation isn't supported
         try:
             object_list = await app.read_property(
                 device_address, device_identifier, "object-list"
             )
-            return object_list
 
         except AbortPDU as err:
             if err.apduAbortRejectReason != AbortReason.segmentationNotSupported:
@@ -635,33 +621,69 @@ class SampleCmd(Cmd):
                 _log.error(f"{device_identifier} object-list error/reject: {err}\n")
             return []
 
-        # fall back to reading the length and each element one at a time
-        object_list = []
-        try:
-            # read the length
-            object_list_length = await app.read_property(
-                device_address,
-                device_identifier,
-                "object-list",
-                array_index=0,
-            )
-
-            # read each element individually
-            for i in range(object_list_length):
-                object_identifier = await app.read_property(
+        if not object_list:
+            
+            if _debug:
+                _log.debug("Empy Object List Will Attempt Reading One By One")
+            else:
+                print("Empy Object List Will Attempt Reading One By One")
+            
+            try:
+                # read the length
+                object_list_length = await app.read_property(
                     device_address,
                     device_identifier,
                     "object-list",
-                    array_index=i + 1,
-                )
-                object_list.append(object_identifier)
-        except ErrorRejectAbortNack as err:
-            if show_warnings:
-                _log.error(
-                    f"{device_identifier} object-list length error/reject: {err}\n"
+                    array_index=0,
                 )
 
-        return object_list
+                # read each element individually
+                for i in range(object_list_length):
+                    object_identifier = await app.read_property(
+                        device_address,
+                        device_identifier,
+                        "object-list",
+                        array_index=i + 1,
+                    )
+                    object_list.append(object_identifier)
+                    
+            except ErrorRejectAbortNack as err:
+                if show_warnings:
+                    _log.error(
+                        f"{device_identifier} object-list length error/reject: {err}\n"
+                    )
+
+        # loop thru each object and attempt to tease out the name
+        for object_identifier in object_list:
+            object_class = vendor_info.get_object_class(object_identifier[0])
+            
+            if _debug:
+                _log.debug("    - object_class: %r", object_class)
+                
+            if object_class is None:
+                if show_warnings:
+                    _log.error(f"unknown object type: {object_identifier}\n")
+                continue
+
+            if _debug:
+                _log.debug(f"    {object_identifier}:")
+
+            try:
+
+                property_value = await app.read_property(
+                    device_address, object_identifier, "object-name"
+                )
+                if _debug:
+                    _log.debug(f" {object_identifier}: {property_value}")
+                else:
+                    print(f" {object_identifier}: {property_value}")
+
+            except ErrorRejectAbortNack as err:
+                if show_warnings:
+                    _log.error(
+                        f"{object_identifier} {object_identifier} error: {err}\n"
+                    )
+
 
     async def do_who_is_router_to_network(
         self, address: Optional[Address] = None, network: Optional[int] = None
@@ -706,7 +728,10 @@ class SampleCmd(Cmd):
                 )
             )
 
-        await self.response("\n".join(report))
+        if _debug:
+            _log.debug("\n".join(report))
+        else:
+            print("\n".join(report))
 
 
 async def main() -> None:
