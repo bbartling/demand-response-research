@@ -4,7 +4,7 @@ This server application is designed to interact with a building's control system
 
 # Install packages with pip
 ```bash
-pip install openleadr bacpypes pyyaml ifaddr
+pip install openleadr bacpypes3 pyyaml ifaddr
 ```
 
 # bacpypes 3 args
@@ -14,63 +14,5 @@ When running the python script use args like this below which is built into bacp
 
 ```bash
 # test the script
-$ python adr_client.py --name Slipstream --instance 3056672 --debug
+$ python app.py --name Slipstream --instance 3056672 --debug
 ```
-
-# Config yaml
-Set your project configs in the yaml file which would be your open ADR device `ven name`, open ADR server `vtn url`, and the signal that would represent the `normal operations` for when the open ADR event expires. The payload coming from the server is used during the event.
-```yaml
-ven_name: "some_ven_id"
-vtn_url: "https://some-openadr-server/OpenADR2/Simple/2.0b"
-normal_operations: 0.0
-```
-
-# Linux service notes
-```bash
-# make systemd file
-$ cd /etc/systemd/system
-
-# edit file
-$ sudo nano adr_client.service
-```
-
-Edit systemd file contents with nano and make sure to set your paths and `WorkingDirectory`:
-```bash
-[Unit]
-Description=ADR Client Service
-After=network.target
-
-[Service]
-User=bbartling
-ExecStart=/usr/bin/python /home/bbartling/open_ADR/bacnet_client_adr_client/adr_client.py --name Slipstream --instance 3056672 --debug
-WorkingDirectory=/home/bbartling/open_ADR/bacnet_client_adr_client
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Start the linux service
-```bash
-# Start linux service
-$ sudo systemctl start adr_client.service
-
-# Check status
-$ sudo systemctl status adr_client.service
-
-# Tail logs
-$ sudo journalctl -fu adr_client.service
-```
-
-Commands if you need to restart the service if some change in the script or config was made
-```bash
-# stop linux service
-$ sudo systemctl stop adr_client.service
-
-# Reload if app code needs to be changed
-$ sudo systemctl daemon-reload
-
-# Restart linux service
-$ sudo systemctl restart adr_client.service
-```
-

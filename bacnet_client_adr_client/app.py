@@ -43,7 +43,7 @@ NORMAL_OPERATIONS = config['normal_operations_signal_value']
 VEN_TO_VTN_CHECK_IN_INTERVAL = config['ven_to_vtn_check_interval_seconds']
 BACNET_SERVER_UPDATE_INTERVAL = config['bacnet_server_update_interval_seconds']
 METER_READ_INTERVAL = config['meter_read_interval_seconds']
-DO_BACNET_WRITES_ON_EVENT_TRUE = config['do_bacnet_writes_on_event_true']
+BACNET_TEST_MODE = config['bacnet_side_test_mode']
 
 if 'load_shed_write_requests' in config and config['load_shed_write_requests']:
     LOAD_SHED_WRITE_REQUESTS = config['load_shed_write_requests']
@@ -80,13 +80,11 @@ class EventActions(Enum):
     
 class CommandableBinaryValueObject(Commandable, BinaryValueObject):
     """
-    This BACnet point is set to be a Commandable or writeable.
-    Commandable Binary Value BACnet Object, used for open ADR Opt In Opt Out
-    when an open ADR event slides into the handle_event method. BAS or
-    control sys inside the building can programmatically or human overrides set
-    this BACnet var to Opt In or Opt Out based on conditions before an event comes
-    in. IE., if building systems are down or overheating or emergency modes, etc.
-    automatically Opt Out of the event if one comes in...
+    This BACnet object represents a Commandable Binary Value.
+    It is used for open ADR Opt-In/Opt-Out scenarios, allowing BAS (Building Automation Systems)
+    or control systems to programmatically or manually set this BACnet variable to Opt-In
+    or Opt-Out based on predefined conditions. This flexibility enables automatic Opt-Out
+    during critical building system states (e.g., downtime, emergencies).
     """
 
 @bacpypes_debugging
@@ -405,36 +403,35 @@ class SampleApplication:
     async def handle_load_shed_event_go(self):
         _log.info("LOAD SHED EVENT GO!")
 
-        if DO_BACNET_WRITES_ON_EVENT_TRUE:
-            if LOAD_SHED_WRITE_REQUESTS:
+        if not BACNET_TEST_MODE:
+            if LOAD_SHED_WRITE_REQUESTS: # if there are bacnet write configd in the config.yaml
                 await self.apply_bacnet_event_overrides(LOAD_SHED_WRITE_REQUESTS)
                 await self.set_bacnet_dr_app_error_status_pv(False)
 
+            _log.info("handle_load_shed_event_go Success!")
+        else:
             # make changes to the BACnet API
             await self.set_dr_signal(self.event_payload_value)
             await self.set_dr_event_active(True)
-
-            _log.info("handle_load_shed_event_go Success!")
-        else:
-            _log.info("do_bacnet_writes_on_event_true is False")
+            _log.info(f"BACNET_TEST_MODE is {BACNET_TEST_MODE}")
 
     async def handle_load_shed_event_stop(self):
         _log.info("LOAD SHED EVENT STOP!")
 
-        if DO_BACNET_WRITES_ON_EVENT_TRUE:
-            if LOAD_SHED_WRITE_REQUESTS:
+        if not BACNET_TEST_MODE: # like a test mode
+            if LOAD_SHED_WRITE_REQUESTS: # if there are bacnet write configd in the config.yaml
                 await self.apply_bacnet_event_releases(LOAD_SHED_WRITE_REQUESTS)
                 await self.set_bacnet_dr_app_error_status_pv(False)
             
+            _log.info("handle_load_shed_event_stop Success!")
+        else:
+            _log.info(f"BACNET_TEST_MODE is {BACNET_TEST_MODE}")
             # make changes to the BACnet API
             await self.set_dr_signal(NORMAL_OPERATIONS)
             await self.set_dr_event_active(False)
             await self.reset_adr_attributes()
             
-            _log.info("handle_load_shed_event_stop Success!")
-        else:
-            _log.info("do_bacnet_writes_on_event_true is False")
-
+            
     async def apply_bacnet_event_overrides(self, requests):
         for request in requests:
             try:

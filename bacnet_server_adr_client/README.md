@@ -4,7 +4,7 @@ This server application is designed to interact with a building's control system
 
 # Install packages with pip
 ```bash
-pip install openleadr bacpypes pyyaml ifaddr
+pip install openleadr bacpypes3 pyyaml ifaddr
 ```
 
 # bacpypes 3 args
@@ -14,7 +14,7 @@ When running the python script use args like this below which is built into bacp
 
 ```bash
 # test the script
-$ python adr_client.py --name Slipstream --instance 3056672 --debug
+$ python app.py --name Slipstream --instance 3056672 --debug
 ```
 
 # Config yaml

@@ -1,10 +1,14 @@
 ven_name: "some_ven_id"
 vtn_url: "https://some-openadr-server/OpenADR2/Simple/2.0b"
-normal_operations: 0.0
+
+normal_operations_signal_value: 0.0
 ven_to_vtn_check_interval_seconds: 10
 bacnet_server_update_interval_seconds: 1.0
 meter_read_interval_seconds: 60.0
-do_bacnet_writes_on_event_true: True
+
+# BACnet server API will will change if True but no writes
+bacnet_side_test_mode: True
+
 load_shed_write_requests:
 
   # TAG not used, maybe in future versions for an algorithm
