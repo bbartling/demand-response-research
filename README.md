@@ -2,31 +2,31 @@
 Building side research project with open ADR
 
 
-# make virtual env
+### make virtual env
 ```bash
 python -m venv drenv
 ```
 
-# activate virt env
+### activate virt env
 ```bash
 . drenv/bin/activate
 ```
 
-# pip install python packges
+### pip install python packges
 ```bash
 pip install bacpypes3 openleadr ifaddr
 ```
 
-# Linux service notes
+### Linux service notes
 ```bash
 # make systemd file
 $ cd /etc/systemd/system
 
-# edit file
+### edit file
 $ sudo nano adr_client.service
 ```
 
-Edit systemd file contents with nano and make sure to set your paths and `WorkingDirectory`:
+### Edit systemd file contents with nano and make sure to set your paths and `WorkingDirectory`:
 ```bash
 [Unit]
 Description=ADR Client Service
@@ -42,7 +42,7 @@ WantedBy=multi-user.target
 
 ```
 
-Start the linux service
+### Start the linux service
 ```bash
 # Start linux service
 $ sudo systemctl enable adr_client.service
@@ -57,7 +57,7 @@ $ sudo systemctl status adr_client.service
 $ sudo journalctl -fu adr_client.service
 ```
 
-Commands if you need to restart the service if some change in the script or config was made
+### Commands if you need to restart the service if some change in the script or config was made
 ```bash
 # stop linux service
 $ sudo systemctl stop adr_client.service
