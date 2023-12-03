@@ -2,11 +2,6 @@
 
 This server application is designed to interact with a building's control system, rather than directly reading and writing to field-level devices on the Operational Technology (OT) LAN. It operates by providing the `demand-response-level` point for the control system to access. The control system is then expected to implement the appropriate demand response strategy for the specific project. After executing this strategy, the control system should write back the power meter value to this application using the BACnet writable or commandable point named `power-level`. This value is then relayed to the open ADR server to complete the data exchange process.
 
-# Install packages with pip
-```bash
-pip install openleadr bacpypes3 pyyaml ifaddr
-```
-
 # bacpypes 3 args
 When running the python script use args like this below which is built into bacpypes3 to `debug`, set your BACnet server `device` name, and `instance` ID. If you need to run your device on a unique port number other than default BACnet of 47808 use an arg like `--address 10.7.6.201/24:47820` would be for a static IP in Cidar notation and UDP port 47820. 
 
