@@ -49,8 +49,8 @@ _log = ModuleLogger(globals())
 # 'property[index]' matching
 property_index_re = re.compile(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$")
 
-VEN_NAME = "adelphi_nexus"
-DR_SERVER_URL = "https://openadr.slipstream.tools/OpenADR2/Simple/2.0b"
+VEN_NAME = "some_ven"
+DR_SERVER_URL = "https://bens.openadr.server/OpenADR2/Simple/2.0b"
 USE_OPEN_ADR = True
 VEN_TO_VTN_CHECK_IN_INTERVAL= 10
 
