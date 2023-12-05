@@ -1,6 +1,7 @@
+#!/usr/bin/python3
+
 import asyncio
 import re
-import os
 from enum import Enum
 from datetime import datetime,timedelta,timezone
 
@@ -48,8 +49,8 @@ _log = ModuleLogger(globals())
 # 'property[index]' matching
 property_index_re = re.compile(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$")
 
-VEN_NAME = "some_tasty_ven"
-DR_SERVER_URL = "https://bens.dr.server/OpenADR2/Simple/2.0b"
+VEN_NAME = "adelphi_nexus"
+DR_SERVER_URL = "https://openadr.slipstream.tools/OpenADR2/Simple/2.0b"
 USE_OPEN_ADR = True
 VEN_TO_VTN_CHECK_IN_INTERVAL= 10
 
@@ -57,7 +58,7 @@ NORMAL_OPERATIONS = 0.0
 BACNET_SERVER_UPDATE_INTERVAL = 2.0
 BACNET_REQ_INTERVAL = 60.0
 WRITE_PRIORITY = 10
-APPLY_BACNET_WRITES = True # make BACnet writes to devices
+APPLY_BACNET_WRITES = False # make BACnet writes to devices
 READ_REQUESTS = [
     {
         "device_address": "32:18",
@@ -228,7 +229,7 @@ class SampleApplication:
         bacnet_dr_sig = await self.get_bacnet_dr_signal_pv() 
         bacnet_power_sig = await self.get_bacnet_power_meter_pv()
         meter_reading = await self.get_building_meter_value()
-        dr_overrides_status = await self.get_bacnet_dr_app_error_status_pv()
+        dr_overrides_status = await self.get_dr_event_active()
         bacnet_apply_err_status = await self.get_bacnet_dr_app_error_status_pv()
         _log.info(f"DR Sig is: {dr_sig_val}")
         _log.info(f"BACnet DR is: {bacnet_dr_sig}")
@@ -817,5 +818,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         if _debug:
             _log.debug("keyboard interrupt")
-
-

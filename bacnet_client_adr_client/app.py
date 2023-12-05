@@ -407,6 +407,7 @@ class SampleApplication:
             if LOAD_SHED_WRITE_REQUESTS: # if there are bacnet write configd in the config.yaml
                 await self.apply_bacnet_event_overrides(LOAD_SHED_WRITE_REQUESTS)
                 await self.set_bacnet_dr_app_error_status_pv(False)
+                await self.set_dr_signal(self.event_payload_value)
 
             _log.info("handle_load_shed_event_go Success!")
         else:
@@ -422,6 +423,7 @@ class SampleApplication:
             if LOAD_SHED_WRITE_REQUESTS: # if there are bacnet write configd in the config.yaml
                 await self.apply_bacnet_event_releases(LOAD_SHED_WRITE_REQUESTS)
                 await self.set_bacnet_dr_app_error_status_pv(False)
+                await self.set_dr_signal(NORMAL_OPERATIONS)
             
             _log.info("handle_load_shed_event_stop Success!")
         else:
