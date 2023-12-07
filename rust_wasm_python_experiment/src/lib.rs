@@ -19,7 +19,6 @@ pub enum OperationalMode {
     MaximumSaving,
 }
 
-
 impl BuildingSystem {
     pub fn new() -> Self {
         BuildingSystem {
@@ -56,7 +55,11 @@ impl BuildingSystem {
     }
 }
 
-// Exported functions...
+#[no_mangle]
+pub extern "C" fn create_cpp_signal(price: f32, duration: u32) -> *mut CPPSignal {
+    Box::into_raw(Box::new(CPPSignal { price, duration }))
+}
+
 
 #[no_mangle]
 pub extern "C" fn create_building_system() -> *mut BuildingSystem {

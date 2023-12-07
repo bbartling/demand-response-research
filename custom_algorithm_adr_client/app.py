@@ -51,6 +51,7 @@ property_index_re = re.compile(r"^([A-Za-z-]+)(?:\[([0-9]+)\])?$")
 
 VEN_NAME = "some_ven"
 DR_SERVER_URL = "https://bens.openadr.server/OpenADR2/Simple/2.0b"
+
 USE_OPEN_ADR = True
 VEN_TO_VTN_CHECK_IN_INTERVAL= 10
 
@@ -237,6 +238,7 @@ class SampleApplication:
         _log.info(f"Meter Reading is: {meter_reading}")
         _log.info(f"DR Overrides Status is: {dr_overrides_status}")
         _log.info(f"BACnet Apply Error Status is: {bacnet_apply_err_status}")
+        _log.info(f"APPLY_BACNET_WRITES: {APPLY_BACNET_WRITES}")
         return meter_reading
 
     async def handle_event(self, event):
@@ -292,10 +294,10 @@ class SampleApplication:
         if isinstance(value, bool):
             if value:
                 self.dr_event_app_error.presentValue = "active"
-                _log.debug("set_bacnet_dr_app_error_status_pv set True")
+                _log.info("set_bacnet_dr_app_error_status_pv set True")
             else:
                 self.dr_event_app_error.presentValue = "inactive"
-                _log.debug("set_bacnet_dr_app_error_status_pv set False")
+                _log.info("set_bacnet_dr_app_error_status_pv set False")
 
     async def set_dr_event_active(self, value):
         if isinstance(value, bool):
@@ -346,8 +348,8 @@ class SampleApplication:
         now_utc = datetime.now(timezone.utc)
         event_type = await self.get_event_payload_value()
         
-        _log.debug(f"event_checkr event signal: {event_type}")
-        _log.debug(f"event_checkr event signal type: {type(event_type)}")
+        _log.info(f"event_checkr event signal: {event_type}")
+        _log.info(f"event_checkr event signal type: {type(event_type)}")
 
         until_start_time_seconds = (await self.get_adr_start() - now_utc).total_seconds()
         until_end_time_seconds = (await self.get_adr_event_ends() - now_utc).total_seconds()
@@ -470,6 +472,9 @@ class SampleApplication:
                 
     async def read_property_task(self):
         should_continue = True
+        hvac_address = Address("32:18")
+        mecho_address = Address("10.7.6.161/24:47820")
+        
         while True:
             await asyncio.sleep(BACNET_REQ_INTERVAL)
             
@@ -478,103 +483,89 @@ class SampleApplication:
             # Create a list to store read values
             read_values = []
             
-            for req in READ_REQUESTS:
-                _log.debug(" READ_REQUESTS GO!!!")
-                _log.debug("    - req: %r", req)
+            _log.info(" READ_REQUESTS GO!!!")
 
-                try:
-                    if req["tags"] == "temp setpoint":
-                        # Read the setpoint value.
-                        setpoint_address = Address(req["device_address"])
-                        setpoint_identifier = ObjectIdentifier(req["object_identifier"])
-                        
-                        if _debug:
-                            SampleApplication._debug(
-                                "do_read %r %r %r %r",
-                                setpoint_address,
-                                setpoint_identifier,
-                                req["property_identifier"],
-                                req["property_array_index"]
-                            )
-                            
-                        hvac_setpoint_value = await self.app.read_property(
-                            setpoint_address,
-                            setpoint_identifier,
-                            req["property_identifier"],
-                            req["property_array_index"],
-                        )
-                        
-                        _log.debug("    - hvac_setpoint_value: %r", hvac_setpoint_value)
-                        read_values.append(hvac_setpoint_value)
-
-                    if req["tags"] == "vav hvac mode":
-                        # Read the vav hvac mode.
-                        mode_address = Address(req["device_address"])
-                        temp_identifier = ObjectIdentifier(req["object_identifier"])
-                        
-                        if _debug:
-                            SampleApplication._debug(
-                                "do_read %r %r %r %r",
-                                mode_address,
-                                temp_identifier,
-                                req["property_identifier"],
-                                req["property_array_index"]
-                            )
-                            
-                        hvac_mode_value = await self.app.read_property(
-                            mode_address,
-                            temp_identifier,
-                            req["property_identifier"],
-                            req["property_array_index"],
-                        )
-                        
-                        _log.debug("    - hvac_mode_value: %r", hvac_mode_value)
-                        read_values.append(hvac_mode_value)
-
-                    if req["tags"] == "occupancy sensor point":
-                        # Read the occ value.
-                        occupancy_address = Address(req["device_address"])
-                        occupancy_identifier = ObjectIdentifier(req["object_identifier"])
-                        
-                        if _debug:
-                            SampleApplication._debug(
-                                "do_read %r %r %r %r",
-                                occupancy_address,
-                                occupancy_identifier,
-                                req["property_identifier"],
-                                req["property_array_index"]
-                            )
-                            
-                        ppm = await self.app.read_property(
-                            occupancy_address,
-                            occupancy_identifier,
-                            req["property_identifier"],
-                            req["property_array_index"],
-                        )
-                        
-                        if ppm > self.ppm_for_occ:
-                            self.room_is_occupied = True
-                            
-                        _log.debug("    - ppm: %r", ppm)
-                        _log.debug("    - self.room_is_occupied: %r", self.room_is_occupied)
-                        read_values.append(self.room_is_occupied)
+            try:
+                # Read the setpoint value.
+                setpoint_identifier = ObjectIdentifier("analog-value,27")
+                
+                if _debug:
+                    SampleApplication._debug(
+                        "do_read %r %r %r",
+                        hvac_address,
+                        setpoint_identifier,
+                        "present-value",
+                    )
                     
-                except ErrorRejectAbortNack as err:
-                    _log.error(f"Error while processing READ REQUESTS: {err}")
-                    await self.set_bacnet_dr_app_error_status_pv(True)
-                    should_continue = False
-                    return
+                hvac_setpoint_value = await self.app.read_property(
+                    hvac_address,
+                    setpoint_identifier,
+                    "present-value",
+                )
+                
+                _log.info("    - hvac_setpoint_value: %r", hvac_setpoint_value)
+                read_values.append(hvac_setpoint_value)
 
-                except Exception as e:
-                    _log.error(f"An unexpected error occurred on READ REQUESTS: {e}")
-                    await self.set_bacnet_dr_app_error_status_pv(True)
-                    should_continue = False
-                    return
+                # Read the vav hvac mode.
+                mode_identifier = ObjectIdentifier("multi-state-value,5")
+                
+                if _debug:
+                    SampleApplication._debug(
+                        "do_read %r %r %r",
+                        hvac_address,
+                        mode_identifier,
+                        "present-value",
+                    )
+                    
+                hvac_mode_value = await self.app.read_property(
+                    hvac_address,
+                    mode_identifier,
+                    "present-value"
+                )
+                
+                _log.info("    - hvac_mode_value: %r", hvac_mode_value)
+                read_values.append(hvac_mode_value)
 
-            if should_continue:
-                # Calculate HVAC mode based on temperature and setpoint
+                # Read the occ value which is C02
+                occupancy_identifier = ObjectIdentifier("analog-input,8")
+                
+                if _debug:
+                    SampleApplication._debug(
+                        "do_read %r %r %r",
+                        hvac_address,
+                        occupancy_identifier,
+                        "present-value",
+                    )
+                    
+                ppm = await self.app.read_property(
+                    hvac_address,
+                    occupancy_identifier,
+                    "present-value",
+                )
+                
+                if ppm > self.ppm_for_occ:
+                    self.room_is_occupied = True
+                    
+                _log.info("    - ppm: %r", ppm)
+                _log.info("    - self.room_is_occupied: %r", self.room_is_occupied)
+                read_values.append(self.room_is_occupied)
+    
                 hvac_setpoint_value, hvac_mode_value, self.room_is_occupied = read_values
-                _log.debug("    - read_values: %r %r %r", hvac_setpoint_value, hvac_mode_value, self.room_is_occupied)
+                _log.info("    - read_values: %r %r %r", hvac_setpoint_value, hvac_mode_value, self.room_is_occupied)
+                
+            except ErrorRejectAbortNack as err:
+                _log.error(f"Error while processing READ REQUESTS: {err}")
+                await self.set_bacnet_dr_app_error_status_pv(True)
+                should_continue = False
+                return
+
+            except Exception as e:
+                _log.error(f"An unexpected error occurred on READ REQUESTS: {e}")
+                await self.set_bacnet_dr_app_error_status_pv(True)
+                should_continue = False
+                return
+    
+            if should_continue:
 
                 # mecho requires an AV for occupancy
                 if self.room_is_occupied:
@@ -591,8 +582,8 @@ class SampleApplication:
                     # for mecho window blinds, write continuously
                     self.hvac_mode = 1.0 # heating
                     
-                _log.debug("    - self.hvac_mode: %r", self.hvac_mode)
-                _log.debug("    - hvac_setpoint_value: %r", hvac_setpoint_value)
+                _log.info("    - self.hvac_mode: %r", self.hvac_mode)
+                _log.info("    - hvac_setpoint_value: %r", hvac_setpoint_value)
                 
                 # add more logic to add or substract setpoints dependent on the cooling or heating modes
                 # if heating mode substract the setpoint adj
@@ -603,151 +594,171 @@ class SampleApplication:
                         # for Trane HVAC write, calc new setpoint and write only once
                         hvac_setpoint_value += self.hvac_setpoint_adj 
                         self.room_setpoint_written = True
-                        _log.debug("    - new hvac_setpoint_value: %r", hvac_setpoint_value)
+                        _log.info("    - new hvac_setpoint_value: %r", hvac_setpoint_value)
                         
                     if not self.room_setpoint_written:
                         # for Trane HVAC write, calc new setpoint and write only once
                         hvac_setpoint_value -= self.hvac_setpoint_adj
                         self.room_setpoint_written = True
-                        _log.debug("    - new hvac_setpoint_value: %r", hvac_setpoint_value)
+                        _log.info("    - new hvac_setpoint_value: %r", hvac_setpoint_value)
 
-                _log.debug(" READ LOOP FINISHED")
+                _log.info(" READ LOOP FINISHED")
                 
                 if APPLY_BACNET_WRITES:
                     
                     try:
-                        # Iterate through WRITE_REQUESTS
-                        # always be writing to mecho doesn't need to be released
-                        for write_req in WRITE_REQUESTS:
+                        # Write last server payload to the "demand response" point.
+                        # to Mecho window blind system AnalogValue
+                        await self.write_property_task(
+                            mecho_address,
+                            "analog-value,99",
+                            "present-value",
+                            self.current_server_payload,
+                        )
+                        
+                        # Write self.occ_to_write to the "heating or cooling" point.
+                        # to Mecho window blind system AnalogValue
+                        await self.write_property_task(
+                            mecho_address,
+                            "analog-value,98",
+                            "present-value",
+                            self.occ_to_write,
+                        )
+                                
+                        # Write self.hvac_mode to the "heating or cooling" point.
+                        # to Mecho window blind system AnalogValue
+                        await self.write_property_task(
+                            mecho_address,
+                            "analog-value,97",
+                            "present-value",
+                            self.hvac_mode,
+                        )
+                        
+                    except ErrorRejectAbortNack as err:
+                        _log.error(f"Error while processing Mecho Writes: {err}")
+                        await self.set_bacnet_dr_app_error_status_pv(True)
+
+                    except Exception as e:
+                        _log.error(f"An unexpected error occurred on Mecho Writes: {e}")
+                        await self.set_bacnet_dr_app_error_status_pv(True)
+
+                    # if demand response adjust hvac setpoint only if rm is occupied
+                    if _dr_event_active and self.room_is_occupied:
+                        try:
+                            _log.info(" DR EVENT ACTIVE Room is occupied")
                             
-                            if write_req["technology_silo"] == "blinds":
-                                if write_req["tags"] == "demand responce":
-                                    # Write last server payload to the "demand response" point.
-                                    # to Mecho window blind system AnalogValue
-                                    await self.write_property_task(
-                                        Address(write_req["device_address"]),
-                                        ObjectIdentifier(write_req["object_identifier"]),
-                                        write_req["property_identifier"],
-                                        self.current_server_payload,
-                                    )
+                            # write new hvac temp setpoint
+                            await self.write_property_task(
+                                hvac_address,
+                                "analog-value,27",
+                                "present-value",
+                                hvac_setpoint_value,
+                            )
                                     
-                                if write_req["tags"] == "occupancy signal":
-                                    # Write self.occ_to_write to the "heating or cooling" point.
-                                    # to Mecho window blind system AnalogValue
-                                    await self.write_property_task(
-                                        Address(write_req["device_address"]),
-                                        ObjectIdentifier(write_req["object_identifier"]),
-                                        write_req["property_identifier"],
-                                        self.occ_to_write,
-                                    )
+                            # release air flow
+                            await self.write_property_task(
+                                hvac_address,
+                                "analog-value,13",
+                                "present-value",
+                                "null"  # bacnet release
+                            )
                                     
-                                if write_req["tags"] == "heating or cooling":
-                                    # Write self.hvac_mode to the "heating or cooling" point.
-                                    # to Mecho window blind system AnalogValue
-                                    await self.write_property_task(
-                                        Address(write_req["device_address"]),
-                                        ObjectIdentifier(write_req["object_identifier"]),
-                                        write_req["property_identifier"],
-                                        self.hvac_mode,
-                                    )
-
-                            # if demand response adjust hvac setpoint only if rm is occupied
-                            if _dr_event_active and self.room_is_occupied:
-                                _log.debug(" DR EVENT ACTIVE Room is occupied")
-                                
-                                if write_req["technology_silo"] == "hvac":
-                                    # Adjust setpoint based on the mode and demand response.
-                                    if write_req["tags"] == "temp setpoint":
-                                        await self.write_property_task(
-                                            Address(write_req["device_address"]),
-                                            ObjectIdentifier(write_req["object_identifier"]),
-                                            write_req["property_identifier"],
-                                            hvac_setpoint_value,
-                                        )
-                                        
-                                    if write_req["tags"] == "air flow setpoint":
-                                        await self.write_property_task(
-                                            Address(write_req["device_address"]),
-                                            ObjectIdentifier(write_req["object_identifier"]),
-                                            write_req["property_identifier"],
-                                            "null"  # bacnet release
-                                        )
-                                        
-                                    if write_req["tags"] == "chilled beam valve":
-                                        await self.write_property_task(
-                                            Address(write_req["device_address"]),
-                                            ObjectIdentifier(write_req["object_identifier"]),
-                                            write_req["property_identifier"],
-                                            "null"  # bacnet release
-                                        )
-                                        
-                                    self.hvac_needs_to_be_released = True
-
-                            # if demand resp and not occupied close air damper and chilled beam valve
-                            if _dr_event_active and not self.room_is_occupied:
-                                _log.debug(" DR EVENT ACTIVE Room is not occupied")
-                                
-                                if write_req["technology_silo"] == "hvac":
-                                    # Adjust setpoint based on the mode and demand response.
-                                    if write_req["tags"] == "temp setpoint":
-                                        await self.write_property_task(
-                                            Address(write_req["device_address"]),
-                                            ObjectIdentifier(write_req["object_identifier"]),
-                                            write_req["property_identifier"],
-                                            "null"  # bacnet release
-                                        )
-                                    if write_req["tags"] == "air flow setpoint":
-                                        await self.write_property_task(
-                                            Address(write_req["device_address"]),
-                                            ObjectIdentifier(write_req["object_identifier"]),
-                                            write_req["property_identifier"],
-                                            0,
-                                        )
-                                    if write_req["tags"] == "chilled beam valve":
-                                        await self.write_property_task(
-                                            Address(write_req["device_address"]),
-                                            ObjectIdentifier(write_req["object_identifier"]),
-                                            write_req["property_identifier"],
-                                            0,
-                                        )
-                                    self.hvac_needs_to_be_released = True
-
-                        # if no demand response release all HVAC one last time
-                        if not _dr_event_active and self.hvac_needs_to_be_released:
-                            for write_req in WRITE_REQUESTS:
-                                if write_req["technology_silo"] == "hvac":
-                                    _log.debug(" DR EVENT NOT ACTIVE Releasing all HVAC")
+                            # release chilled beam valve
+                            await self.write_property_task(
+                                hvac_address,
+                                "analog-output,2",
+                                "present-value",
+                                "null"  # bacnet release
+                            )
                                     
-                                    # Adjust setpoint based on the mode and demand response.
-                                    if write_req["tags"] == "temp setpoint":
-                                        await self.write_property_task(
-                                            Address(write_req["device_address"]),
-                                            ObjectIdentifier(write_req["object_identifier"]),
-                                            write_req["property_identifier"],
-                                            "null"  # bacnet release
-                                        )
-                                    if write_req["tags"] == "air flow setpoint":
-                                        await self.write_property_task(
-                                            Address(write_req["device_address"]),
-                                            ObjectIdentifier(write_req["object_identifier"]),
-                                            write_req["property_identifier"],
-                                            "null"  # bacnet release
-                                        )
-                                    if write_req["tags"] == "chilled beam valve":
-                                        await self.write_property_task(
-                                            Address(write_req["device_address"]),
-                                            ObjectIdentifier(write_req["object_identifier"]),
-                                            write_req["property_identifier"],
-                                            "null"  # bacnet release
-                                        )
-                            self.hvac_needs_to_be_released = False
-                            self.room_setpoint_written = False
+                            self.hvac_needs_to_be_released = True
+
+                        except ErrorRejectAbortNack as err:
+                            _log.error(f"Error while processing WRITE REQUESTS: {err}")
+                            await self.set_bacnet_dr_app_error_status_pv(True)
+
+                        except Exception as e:
+                            _log.error(f"An unexpected error occurred on WRITE REQUESTS: {e}")
+                            await self.set_bacnet_dr_app_error_status_pv(True)
+                    
+                    # if demand resp and not occupied close air damper and chilled beam valve
+                    if _dr_event_active and not self.room_is_occupied:
+                        _log.info(" DR EVENT ACTIVE Room is not occupied")
+                        
+                        try:
+                            # release HVAC setpoint
+                            await self.write_property_task(
+                                hvac_address,
+                                "analog-value,27",
+                                "present-value",
+                                "null"  # bacnet release
+                            )
+
+                            # close air valve
+                            await self.write_property_task(
+                                hvac_address,
+                                "analog-value,13",
+                                "present-value",
+                                0,
+                            )
+
+                            # close chilled beam valve
+                            await self.write_property_task(
+                                hvac_address,
+                                "analog-output,2",
+                                "present-value",
+                                0,
+                            )
+                            
+                            self.hvac_needs_to_be_released = True
+
+                        except ErrorRejectAbortNack as err:
+                            _log.error(f"Error while processing WRITE REQUESTS: {err}")
+                            await self.set_bacnet_dr_app_error_status_pv(True)
+
+                        except Exception as e:
+                            _log.error(f"An unexpected error occurred on WRITE REQUESTS: {e}")
+                            await self.set_bacnet_dr_app_error_status_pv(True)
+                            
+                # if no demand response release all HVAC one last time
+                if not _dr_event_active and self.hvac_needs_to_be_released:
+
+                    _log.info(" DR EVENT NOT ACTIVE Releasing all HVAC")
+                    
+                    try:
+
+                        # zone setpoint
+                        await self.write_property_task(
+                            hvac_address,
+                            "analog-value,27",
+                            "present-value",
+                            "null"  # bacnet release
+                        )
+                        
+                        # air flow
+                        await self.write_property_task(
+                            hvac_address,
+                            "analog-value,13",
+                            "present-value",
+                            "null"  # bacnet release
+                        )
+
+                        # chilled beam valve
+                        await self.write_property_task(
+                            hvac_address,
+                            "analog-output,2",
+                            "present-value",
+                            "null"  # bacnet release
+                        )
+                        
+                        self.hvac_needs_to_be_released = False
+                        self.room_setpoint_written = False
                             
                         self.set_bacnet_dr_app_error_status_pv(False)
-                        _log.debug("_dr_event_active status  %r", _dr_event_active)
-                        _log.debug("hvac_needs_to_be_released status %r", self.hvac_needs_to_be_released) 
-                        _log.debug("room_is_occupied status %r", self.room_is_occupied) 
-                            
+                        _log.info("_dr_event_active status  %r", _dr_event_active)
+                        _log.info("hvac_needs_to_be_released status %r", self.hvac_needs_to_be_released) 
+                        _log.info("room_is_occupied status %r", self.room_is_occupied) 
+                        
                     except ErrorRejectAbortNack as err:
                         _log.error(f"Error while processing WRITE REQUESTS: {err}")
                         await self.set_bacnet_dr_app_error_status_pv(True)

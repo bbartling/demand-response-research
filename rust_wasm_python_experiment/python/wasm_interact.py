@@ -1,48 +1,59 @@
-from wasmer import Store, Module, Instance
-import os
+from wasmtime import Store, Module, Instance, Engine, Config, Val
 import random
+import os
 
-# Function to simulate reading data from a building control system
 def read_environmental_data():
-    # Simulate data such as current energy usage or temperature
-    # In a real scenario, this would interface with building sensors
     return {
         'current_energy_usage': random.uniform(2.0, 10.0),  # Simulated energy usage in kW
         'outside_temperature': random.uniform(10, 35)       # Simulated temperature in Celsius
     }
 
-# Relative path to the WebAssembly module
 wasm_path = '../target/wasm32-unknown-unknown/release/smart_building.wasm'
+
+config = Config()
+store = Store(Engine(config))
+
 with open(wasm_path, 'rb') as file:
     wasm_bytes = file.read()
+module = Module(store.engine, wasm_bytes)
 
-# Compile the module
-store = Store()
-module = Module(store, wasm_bytes)
-instance = Instance(module)
+imports = []
 
-# Create a new BuildingSystem
-building_system = instance.exports.create_building_system()
+instance = Instance(store, module, imports)
+print("Available exports:", [key for key in instance.exports(store)])
 
-# Read environmental data
+
+exports = instance.exports(store)
+create_building_system = exports["create_building_system"]
+adjust_systems = exports["adjust_systems"]
+get_hvac_power = exports["get_hvac_power"]
+get_lighting_power = exports["get_lighting_power"]
+create_cpp_signal = exports["create_cpp_signal"]  # New function to create CPPSignal
+
+building_system = create_building_system(store)
+
 environmental_data = read_environmental_data()
 
-# Example: Adjust system based on current energy usage
+
 if environmental_data['current_energy_usage'] > 5:
-    # High energy usage: Increase CPP signal price to trigger energy-saving mode
     cpp_signal_price = 0.20
 else:
-    # Normal energy usage: Keep CPP signal price low
     cpp_signal_price = 0.10
 
-cpp_signal_duration = 60  # Duration in minutes
+cpp_signal_duration = 60
+
+# Create a CPPSignal struct
+cpp_signal = create_cpp_signal(store, Val.f32(cpp_signal_price), Val.i32(cpp_signal_duration))
 
 # Adjust building systems based on CPP signal
-instance.exports.adjust_systems(building_system, cpp_signal_price, cpp_signal_duration)
+# Directly pass 'cpp_signal' which is already a pointer
+adjust_systems(store, building_system, cpp_signal)
 
-# Get the updated state of the building system
-hvac_power = instance.exports.get_hvac_power(building_system)
-lighting_power = instance.exports.get_lighting_power(building_system)
+# Adjust building systems based on CPP signal
+adjust_systems(store, building_system, cpp_signal_ptr)
+
+hvac_power = get_hvac_power(store, building_system)
+lighting_power = get_lighting_power(store, building_system)
 
 print(f"HVAC Power: {hvac_power} kW, Lighting Power: {lighting_power} kW")
 print(f"Current Energy Usage: {environmental_data['current_energy_usage']} kW")
