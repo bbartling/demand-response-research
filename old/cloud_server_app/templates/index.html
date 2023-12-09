@@ -55,6 +55,8 @@
 
         // Function to update the dashboard with fetched data
         function updateDashboard(data) {
+            console.log("Data received:", data); // Add this to log received data
+
             const infoElement = document.getElementById('info');
             const payloadElement = document.getElementById('payload');
             const serverTimeElement = document.getElementById('server-time');
