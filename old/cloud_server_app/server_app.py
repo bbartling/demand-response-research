@@ -36,11 +36,28 @@ payload_data = {}
 @jwt_required()
 def update_data():
     data = request.get_json()
-    for key, value in data.items():
-        # Parse the key as NYC time
-        dt_key_nyc = parser.isoparse(key).astimezone(nyc_tz)
-        payload_data[dt_key_nyc] = value['payload']
+
+    temp_data = {}
+
+    try:
+        # Update with new data
+        for key, value in data.items():
+            # Parse the key as NYC time
+            dt_key_nyc = parser.isoparse(key).astimezone(nyc_tz)
+            temp_data[dt_key_nyc] = value['payload']
+
+        # Clear the existing data and update with new data from temp_data
+        payload_data.clear()
+        payload_data.update(temp_data)
+
+    except Exception as e:
+        # Handle any exceptions that occur during parsing and updating
+        # Log the error and return an error response
+        logger.error(f"Error updating data: {e}")
+        return jsonify({"status": "error", "info": f"Failed to update data: {e}"}), 500
+
     return jsonify({"status": "success", "info": "Data updated successfully"}), 200
+
 
 
 @app.route("/payload/current", methods=["GET"])
