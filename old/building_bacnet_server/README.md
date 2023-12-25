@@ -25,7 +25,7 @@ If a different UDP port is required for the project use an arg like: `--address 
 
 ## Algorithm Method in `main.py` needs to be customized for your application
 
-```Mermaid 
+```mermaid 
 flowchart TD
     A[Start Algorithm Every 10 Seconds] --> B{Read BACnet Values}
     B -->|Read Success| C[Log Read Values]
