@@ -55,7 +55,7 @@ flowchart TD
     R -->|Written| U{Handle Write Ops}
     T --> U
     S -->|Needs Release| V[Release HVAC]
-    S -->|No Release Needed| W[Log No BACnet Writes Needed]
+    S -->|No Release Needed| W[Log No BACnet Writes Needed] --> Z
     V --> X[Write to Mecho Again]
     X --> Y[Reset First Sweep Flag]
     Y --> Z
