@@ -27,39 +27,40 @@ If a different UDP port is required for the project use an arg like: `--address 
 
 ```mermaid 
 flowchart TD
-    A[Start Algorithm Every 10 Seconds] --> B{Read BACnet Values}
+    A[Start Algorithm Every 10 Seconds] -->|Check DR Event| D{DR Event Active?}
+    D -->|True| B{Read BACnet Values}
+    D -->|False| Z[End Algorithm]
     B -->|Read Success| C[Log Read Values]
-    B -->|Read Failure| Z[End Algorithm]
-    C --> D{Check PPM for Occupancy}
-    D -->|PPM > PPM for Occ| E[Set Room Occupied]
-    D -->|PPM < PPM for Occ - Dead Band| F[Set Room Unoccupied]
-    E --> G[Log Current Occupancy]
-    F --> G
-    G --> H{Check if HVAC Mode or Occupancy Changed}
-    H -->|Changed| I[Log Change]
-    H -->|No Change| J[Log No Change]
-    I --> K[Set Mecho AV for Occupancy]
-    J --> K
-    K --> L{Check HVAC Mode}
-    L -->|Heating| M[Set Mecho to Heating]
-    L -->|Cooling| N[Set Mecho to Cooling]
-    L -->|Unknown Mode| O[Log Unknown Mode]
-    M --> P{Check DR Event Active}
-    N --> P
-    O --> P
-    P -->|Active| Q[Check Setpoint Written]
-    P -->|Not Active| R{Check HVAC Needs Release}
-    Q -->|Not Written| S[Write New Setpoint]
-    Q -->|Written| T{Handle Write Ops}
-    S --> T
-    R -->|Needs Release| U[Release HVAC]
-    R -->|No Release Needed| V[Log No BACnet Writes Needed]
-    U --> W[Write to Mecho Again]
-    W --> X[Reset First Sweep Flag]
-    X --> Z
-    T -->|Write Ops| Y[Log Handling Write Ops]
-    Y --> Z[End Algorithm]
-    V --> Z
+    B -->|Read Failure| Z
+    C --> E{Check PPM for Occupancy}
+    E -->|PPM > PPM for Occ| F[Set Room Occupied]
+    E -->|PPM < PPM for Occ - Dead Band| G[Set Room Unoccupied]
+    F --> H[Log Current Occupancy]
+    G --> H
+    H --> I{Check if HVAC Mode or Occupancy Changed}
+    I -->|Changed| J[Log Change]
+    I -->|No Change| K[Log No Change]
+    J --> L[Set Mecho AV for Occupancy]
+    K --> L
+    L --> M{Check HVAC Mode}
+    M -->|Heating| N[Set Mecho to Heating]
+    M -->|Cooling| O[Set Mecho to Cooling]
+    M -->|Unknown Mode| P[Log Unknown Mode]
+    N --> Q{Check DR Event Active}
+    O --> Q
+    P --> Q
+    Q -->|Active| R[Check Setpoint Written]
+    Q -->|Not Active| S{Check HVAC Needs Release}
+    R -->|Not Written| T[Write New Setpoint]
+    R -->|Written| U{Handle Write Ops}
+    T --> U
+    S -->|Needs Release| V[Release HVAC]
+    S -->|No Release Needed| W[Log No BACnet Writes Needed]
+    V --> X[Write to Mecho Again]
+    X --> Y[Reset First Sweep Flag]
+    Y --> Z
+    U -->|Write Ops| Z1[Log Handling Write Ops]
+    Z1 --> Z
 ```
 
 ## Linux service notes
