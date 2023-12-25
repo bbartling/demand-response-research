@@ -1,6 +1,6 @@
 # Running a BACnet server inside the building on OT LAN as a Service on linux edge device using systemd
 
-Update script constants with text editor for the cloud based demand response server (DR):
+Tested on `SIMPLE_SIGNAL` a value of `0` for normal operationss and a value of `1` for demand response `True`. Start off by updating `constants.py` with text editor for the cloud based demand response server (DR):
 
 ```python
 # DR Server Setup
@@ -18,19 +18,51 @@ python -m pip install bacpypes3 aiohttp ifaddr
 
 Test script and use args to set BACnet device name and instance ID that comes by default with bacpypes3:
 ```bash
-python bacnet_server.py --name Slipstream --instance 3056672 --address 10.7.6.201/24:47820 --debug
+python adr_client.py --name Slipstream --instance 3056672
 ```
 
 If a different UDP port is required for the project use an arg like: `--address 192.168.13.14/24:47820`
 
-# Steps
+## Algorithm Method in `main.py` needs to be customized for your application
 
-### If successful with checkin to the `USE_DR_SERVER` run `bacnet_server.py` as a linux service.
-
-Setup:
-```bash
-sudo python -m pip install bacpypes3 aiohttp ifaddr
+```Mermaid 
+flowchart TD
+    A[Start Algorithm Every 10 Seconds] --> B{Read BACnet Values}
+    B -->|Read Success| C[Log Read Values]
+    B -->|Read Failure| Z[End Algorithm]
+    C --> D{Check PPM for Occupancy}
+    D -->|PPM > PPM for Occ| E[Set Room Occupied]
+    D -->|PPM < PPM for Occ - Dead Band| F[Set Room Unoccupied]
+    E --> G[Log Current Occupancy]
+    F --> G
+    G --> H{Check if HVAC Mode or Occupancy Changed}
+    H -->|Changed| I[Log Change]
+    H -->|No Change| J[Log No Change]
+    I --> K[Set Mecho AV for Occupancy]
+    J --> K
+    K --> L{Check HVAC Mode}
+    L -->|Heating| M[Set Mecho to Heating]
+    L -->|Cooling| N[Set Mecho to Cooling]
+    L -->|Unknown Mode| O[Log Unknown Mode]
+    M --> P{Check DR Event Active}
+    N --> P
+    O --> P
+    P -->|Active| Q[Check Setpoint Written]
+    P -->|Not Active| R{Check HVAC Needs Release}
+    Q -->|Not Written| S[Write New Setpoint]
+    Q -->|Written| T{Handle Write Ops}
+    S --> T
+    R -->|Needs Release| U[Release HVAC]
+    R -->|No Release Needed| V[Log No BACnet Writes Needed]
+    U --> W[Write to Mecho Again]
+    W --> X[Reset First Sweep Flag]
+    X --> Z
+    T -->|Write Ops| Y[Log Handling Write Ops]
+    Y --> Z[End Algorithm]
+    V --> Z
 ```
+
+## Linux service notes
 
 1. **Create a Service Unit File**
 
@@ -39,7 +71,7 @@ sudo python -m pip install bacpypes3 aiohttp ifaddr
    ```bash
    cd /etc/systemd/system
 
-   sudo nano bacnet_server.service
+   sudo nano adr_client.service
    ```
 
 2. **Add the Service Configuration** - Make sure you modify the field `User=your_username` and the correct `WorkingDirectory` fields
@@ -51,8 +83,8 @@ sudo python -m pip install bacpypes3 aiohttp ifaddr
 
    [Service]
    User=your_username
-   WorkingDirectory=/home/your_username/bacnet-demand-response-client-server/building_bacnet_server
-   ExecStart=/usr/bin/python3 bacnet_server.py --name Slipstream --instance 3056672 --debug
+   WorkingDirectory=/home/your_username/bacnet-demand-response-client-server/building_adr_client
+   ExecStart=/usr/bin/python3 adr_client.py --name Slipstream --instance 3056672 --debug
    Restart=always
 
    [Install]
@@ -66,31 +98,31 @@ sudo python -m pip install bacpypes3 aiohttp ifaddr
 3. **Enable and Start the Service**
    Enable the service to start on boot:
    ```bash
-   sudo systemctl enable bacnet_server.service
+   sudo systemctl enable adr_client.service
    ```
    Then, start the service:
    ```bash
-   sudo systemctl start bacnet_server.service
+   sudo systemctl start adr_client.service
    ```
 4. **Check the Service Status**
    Check the status of your service to ensure it's running without errors:
    ```bash
-   sudo systemctl status bacnet_server.service
+   sudo systemctl status adr_client.service
    ```
 5. **If errors and need to update script**
    If you make changes to the script, stop the service to update it:
    ```bash
-   sudo systemctl stop bacnet_server.service
+   sudo systemctl stop adr_client.service
    ```
 6. **Start the Service After Updating**
    After making changes to the script, start the service again:
    ```bash
-   sudo systemctl start bacnet_server.service
+   sudo systemctl start adr_client.service
    ```
 7. **Check the Updated Status**
    Check the status again to confirm that the updated script is running:
    ```bash
-   sudo systemctl status bacnet_server.service
+   sudo systemctl status adr_client.service
    ```
 
 ### **Reload Linux service if modifiations are required to the .py file and or Linux service**
@@ -101,17 +133,17 @@ sudo python -m pip install bacpypes3 aiohttp ifaddr
 
    Restart your service to apply the changes:
    ```bash
-   sudo systemctl restart bacnet_server.service
+   sudo systemctl restart adr_client.service
    ```
 
    Check the status to ensure it's running as expected:
    ```bash
-   sudo systemctl status bacnet_server.service
+   sudo systemctl status adr_client.service
    ```
 
    See debug print statements:
    ```bash
-   sudo journalctl -u bacnet_server.service -f
+   sudo journalctl -u adr_client.service -f
    ```
 
 # Troubleshooting
