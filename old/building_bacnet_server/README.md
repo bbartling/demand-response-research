@@ -59,8 +59,10 @@ flowchart TD
     V --> X[Write to Mecho Again]
     X --> Y[Reset First Sweep Flag]
     Y --> Z
-    U -->|Write Ops| Z1[Log Handling Write Ops]
-    Z1 --> Z
+    U -->|Write Ops| AA[Log Handling Write Ops]
+    AA --> Z
+    U -->|No Need to Write| AB[Log No BACnet Writes Needed] --> Z
+
 ```
 
 ## Linux service notes
