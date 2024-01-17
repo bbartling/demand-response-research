@@ -19,7 +19,7 @@ from openleadr import OpenADRClient, enable_default_logging
 from constants import *
 
 
-_debug = 0
+_debug = 1
 
 # Enable logging for openleadr
 enable_default_logging()
@@ -54,6 +54,13 @@ class Utils:
             sampling_rate=timedelta(seconds=10),
         )
         self.client.add_handler("on_event", self.handle_event)
+        
+    async def is_any_event_scheduled(self):
+        """
+        Check if there are any events scheduled in the active_events dictionary.
+        Returns True if there are events, False otherwise.
+        """
+        return bool(self.active_events)
         
     async def check_dr_event_status(self):
         last_dr_event_state = False
@@ -90,9 +97,23 @@ class Utils:
         # checked by the BACnet App
         return self.dr_event_active
 
-    async def collect_report_value(self): 
+    async def collect_report_value(self):
+        """
+        Called every 10 secods by default in open Leadr
+        for sending data to the VTN server and appears to
+        be useful for debug prints in log to see when next
+        ADR event is supposed to hit.
+        """
+        current_payload_val = self.current_adr_payload()
         logging.info(f" DR EVENT STATUS: {self.dr_event_active}")
-        return 1.23  # Replace with actual data collection logic
+        logging.info(f" EVENT PAYLOAD VAL: {current_payload_val}")
+        if self.active_events:
+            logging.info(" -- FUTURE SCHEDULED ADR EVENTS --")
+            for event_id, event_details in self.active_events.items():
+                logging.info(f" Event ID: {event_id}, Details: {event_details}")
+        else:
+            logging.info(" No scheduled ADR events")
+        return 1.23  # Replace with actual data collection logic for metering
     
     def cancel_event(self, event_id):
         # Check if the event is in active_events
@@ -229,16 +250,11 @@ class Utils:
         if _debug:
             logging.info(" priority: %r", priority)
 
-        # check the priority
-        if priority:
-            priority = int(priority)
-            if (priority < 1) or (priority > 16):
-                raise ValueError(f"priority: {priority}")
         if _debug:
-            logging.info(" priority: %r", priority)
+            logging.info(" value: %r", value)
 
         if _debug:
-            DrApplication._debug(
+            logging.debug(
                 "do_write %r %r %r %r %r",
                 device_address,
                 object_identifier,
