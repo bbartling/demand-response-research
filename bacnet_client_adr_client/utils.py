@@ -1,25 +1,22 @@
-from bacpypes3.debugging import bacpypes_debugging, ModuleLogger
+
 from bacpypes3.local.cmd import Commandable
 from bacpypes3.primitivedata import Null
-from bacpypes3.pdu import Address
-from bacpypes3.primitivedata import ObjectIdentifier
 from bacpypes3.apdu import ErrorRejectAbortNack
 from bacpypes3.local.analog import AnalogValueObject
-from bacpypes3.local.binary import BinaryValueObject
 
 import re
 import asyncio
 import logging
 from datetime import timedelta, datetime, timezone
-import aiohttp
 import asyncio
 from enum import Enum
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from openleadr import OpenADRClient, enable_default_logging
 
 from constants import *
 
 
-_debug = 1
+_info = 1
 
 # Enable logging for openleadr
 enable_default_logging()
@@ -54,158 +51,203 @@ class Utils:
             sampling_rate=timedelta(seconds=10),
         )
         self.client.add_handler("on_event", self.handle_event)
+        self.scheduler = AsyncIOScheduler()
+        self.scheduler.start()
         
-    async def is_any_event_scheduled(self):
+        
+    def is_any_event_scheduled(self):
         """
         Check if there are any events scheduled in the active_events dictionary.
         Returns True if there are events, False otherwise.
         """
         return bool(self.active_events)
         
-    async def check_dr_event_status(self):
-        last_dr_event_state = False
-        while True:
-            current_time = datetime.now(timezone.utc)
-            
-            if self.dr_event_active:
-                if not last_dr_event_state:
-                    logging.info("DR EVENT TURNED ON")
-                last_dr_event_state = True
+
+    async def handle_event_duration(self, start_delay, event_duration, event_id, payload):
+        try:
+            logging.info(f"Starting event {event_id} with payload {payload}.")
+            self.dr_event_active = True
+            self.current_server_payload = payload
+
+            start_time = datetime.now(timezone.utc)
+            logging.info(f"Event {event_id}: Loop start time: {start_time.isoformat()}")
+
+            while datetime.now(timezone.utc) - start_time < timedelta(seconds=event_duration):
+                current_time = datetime.now(timezone.utc)
+                time_elapsed = current_time - start_time
+                time_remaining = timedelta(seconds=event_duration) - time_elapsed
+                logging.info(f" Executing algorithm for event {event_id}.")
                 
-                if (
-                    self.last_algorithm_run_time is None
-                    or (current_time - self.last_algorithm_run_time) >= timedelta(seconds=60)
-                ):
-                    logging.info("DR EVENT IS TRUE!")
-                    await self.algorithm()
-                    self.last_algorithm_run_time = current_time
-            else:
-                if last_dr_event_state:
-                    logging.info("DR EVENT TURNED OFF")
-                    logging.info("RUNNING ALGORITHM ONE MORE TIME!")
-                    await self.algorithm()
-                last_dr_event_state = False
-                logging.info("SETTING DR EVENT FALSE")
+                await self.algorithm()
+                await asyncio.sleep(ALGORITHM_RUN_FREQUENCY_SECONDS)
+
+            self.dr_event_active = False
+            self.current_server_payload = DEFAULT_PAYLOAD_SIGNAL
+            logging.info(f"Event {event_id} has ended.")
+            await self.algorithm()  # Post-event cleanup to release overrides
+            self.active_events.pop(event_id, None)
             
-            await asyncio.sleep(CLOUD_DR_SERVER_CHECK_SECONDS)
+
+        except asyncio.CancelledError:
+            logging.info(f"handle_event_duration: CancelledError hit for event {event_id}.")
+        except Exception as e:
+            logging.error(f"handle_event_duration: Exception in event {event_id}: {e}")
+
+
         
     def current_adr_payload(self):
         # checked by the BACnet App
         return self.current_server_payload
     
+    
     def is_dr_event_active(self):
         # checked by the BACnet App
         return self.dr_event_active
 
-    async def collect_report_value(self):
-        """
-        Called every 10 secods by default in open Leadr
-        for sending data to the VTN server and appears to
-        be useful for debug prints in log to see when next
-        ADR event is supposed to hit.
-        """
-        current_payload_val = self.current_adr_payload()
-        logging.info(f" DR EVENT STATUS: {self.dr_event_active}")
-        logging.info(f" EVENT PAYLOAD VAL: {current_payload_val}")
-        if self.active_events:
-            logging.info(" -- FUTURE SCHEDULED ADR EVENTS --")
-            for event_id, event_details in self.active_events.items():
-                logging.info(f" Event ID: {event_id}, Details: {event_details}")
-        else:
-            logging.info(" No scheduled ADR events")
-        return 1.23  # Replace with actual data collection logic for metering
-    
-    def cancel_event(self, event_id):
-        # Check if the event is in active_events
-        if event_id in self.active_events:
-            # Cancel associated tasks if they are scheduled
-            go_task, stop_task = self.active_events[event_id].get('tasks', (None, None))
-            if go_task and not go_task.done():
-                go_task.cancel()
-            if stop_task and not stop_task.done():
-                stop_task.cancel()
 
-            # Remove the event from active_events
-            del self.active_events[event_id]
-            logging.info(f" Event {event_id} cancelled and removed from active events.")
-        else:
-            logging.warning(f" Attempted to cancel non-existent event: {event_id}")
+    async def schedule_event_tasks(self, event_id):
+        event = self.active_events[event_id]
 
+        # Schedule the event handling directly at the start time
+        self.scheduler.add_job(
+            self.handle_event_duration, 
+            'date', 
+            run_date=event["start"], 
+            args=[0, (event["end"] - event["start"]).total_seconds(), event_id, event["payload"]],
+            id=f"{event_id}_start"
+        )
+
+            
     async def handle_event(self, event):
         logging.info(f" Received event: {event}")
         await self.process_adr_event(event)
         return 'optIn'
 
+
     async def process_adr_event(self, event):
         event_id = event["event_descriptor"]["event_id"]  # Unique event identifier
+        current_time = datetime.now(timezone.utc)  # Get the current UTC time as timezone-aware
+
         for signal in event["event_signals"]:
             for interval in signal["intervals"]:
-                start_time = interval["dtstart"]
-                duration = interval["duration"]
+                start_time = interval["dtstart"]  # Assuming this is a timezone-aware datetime object
+                duration = interval["duration"]  # Assuming duration is a timedelta object
                 end_time = start_time + duration
 
-                # Store each event separately in the dictionary
+                # Check if the event is in the past
+                if end_time <= current_time:
+                    logging.info(f"Passing on {event_id} as it is in the past")
+                    continue
+
+                # Check for overlap with existing events
+                if any(self.event_overlaps(start_time, end_time, existing_event) for existing_event in self.active_events.values()):
+                    logging.info(f"Skipping overlapping event: {event_id}")
+                    continue
+
+                # Store the new event and schedule it
                 self.active_events[event_id] = {
                     "start": start_time,
                     "end": end_time,
                     "payload": interval["signal_payload"],
                 }
-
-                # Schedule tasks for each event
                 await self.schedule_event_tasks(event_id)
-                
-    async def fetch_current_utc_time(self):
-        url = "http://worldtimeapi.org/api/timezone/Etc/UTC"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    data = await response.json()
-                    utc_time_str = data['utc_datetime']
-                    return datetime.fromisoformat(utc_time_str)
-        except Exception as e:
-            logging.error(f"Failed to fetch UTC time: {e}")
-            return None
 
-    async def schedule_event_tasks(self, event_id):
-        now_utc = await self.fetch_current_utc_time()
-        if not now_utc:
-            logging.warning("Using system UTC time as fallback.")
-            now_utc = datetime.now(timezone.utc)
 
-        start_delay = (self.active_events[event_id]["start"] - now_utc).total_seconds()
-        end_delay = (self.active_events[event_id]["end"] - now_utc).total_seconds()
+    def event_overlaps(self, new_start, new_end, existing_event):
+        existing_start = existing_event['start']
+        existing_end = existing_event['end']
+        return new_start < existing_end and new_end > existing_start
 
-        logging.info(f"Event {event_id} will start in {start_delay:.2f} seconds and end in {end_delay:.2f} seconds.")
+
+    def cancel_event(self, event_id):
+        # Check if the event is in active_events
+        if event_id in self.active_events:
+            # Cancel the scheduled jobs for this event
+            start_job_id = f"{event_id}_start"
+            end_job_id = f"{event_id}_end"
+
+            start_job = self.scheduler.get_job(start_job_id)
+            if start_job:
+                start_job.remove()
+
+            end_job = self.scheduler.get_job(end_job_id)
+            if end_job:
+                end_job.remove()
+
+            # Remove the event from active_events
+            del self.active_events[event_id]
+            logging.info(f"Event {event_id} cancelled and removed from active events.")
+        else:
+            logging.warning(f"Attempted to cancel non-existent event: {event_id}")
+
+            
+    async def collect_report_value(self):
+        """
+        Called every 10 seconds by default in OpenLEADR
+        for sending data to the VTN server and appears to
+        be useful for info prints in log to see when next
+        ADR event is supposed to hit.
+        """
+        current_payload_val = self.current_adr_payload()
+        current_utc_time_ = datetime.utcnow()
+        current_utc_time_aware = current_utc_time_.replace(tzinfo=timezone.utc)  
+        formatted_time = current_utc_time_.strftime('%Y-%m-%d %H:%M:%S UTC')
         
-        asyncio.create_task(self.event_do(start_delay, event_id, EventActions.GO))
-        asyncio.create_task(self.event_do(end_delay, event_id, EventActions.STOP))
+        logging.info(f" DR Event Status: {self.dr_event_active}")
+        logging.info(f" Current Payload Value: {current_payload_val}")
+        logging.info(f" Current UTC Time: {formatted_time}")
+        
+        if self.is_any_event_scheduled():
+            logging.info(" --- FUTURE SCHEDULED ADR EVENTS ---")
+            past_events = []
+            total_events = len(self.active_events)  # Total number of scheduled events
+            current_event_number = 1  # Initialize event counter
 
-    async def event_do(self, delay, event_id, action):
-        await asyncio.sleep(delay)
-        if action == EventActions.GO:
-            self.dr_event_active = True
-            self.current_server_payload = self.active_events[event_id]["payload"]
-            logging.debug(f"Event {event_id} GO! DR event is now active.")
-            # Implement logic to start the DR event
-        elif action == EventActions.STOP:
-            self.dr_event_active = False
-            self.current_server_payload = DEFAULT_PAYLOAD_SIGNAL
-            logging.debug(f"Event {event_id} STOP! DR event has ended.")
-            # Implement logic to stop the DR event
-            self.active_events.pop(event_id, None)
+            for event_id, event_details in self.active_events.items():
+                try:
+                    if event_details["end"] < current_utc_time_aware:
+                        past_events.append(event_id)
+                    else:
+                        
+                        start_formatted = event_details["start"].strftime('%Y-%m-%d %H:%M:%S UTC')
+                        end_formatted = event_details["end"].strftime('%Y-%m-%d %H:%M:%S UTC')
+                        payload = event_details["payload"]
+                        
+                        logging.info(f"********* EVENT: {current_event_number} ***********************")
+                        logging.info(f" Event ID: {event_id}")
+                        logging.info(f" Start Time: {start_formatted}")
+                        logging.info(f" End Time: {end_formatted}")
+                        logging.info(f" Payload: {payload}")
+            
+                        if current_event_number == total_events:
+                            logging.info(f"*****************************************")
+                        current_event_number += 1
+                except Exception as e:
+                    logging.error(f"Error checking event end time: {e}")
+            
+            for event_id in past_events:
+                del self.active_events[event_id]
+                logging.info(f" Removed past event: {event_id}")
+        else:
+            logging.info(" No scheduled ADR events")
 
-    async def share_data_to_bacnet_server(self):
-        # BACnet server processes
-        return self.current_server_payload
+        return 1.23  # Replace with actual data collection logic for metering
+
 
     async def update_bacnet_server_values(self):
         # BACnet server processes
         while True:
             await asyncio.sleep(BACNET_SERVER_API_UPDATE_INTERVAL)
 
-            self.dr_signal.presentValue = await self.share_data_to_bacnet_server()
+            self.dr_signal.presentValue = self.share_data_to_bacnet_server()
             self.app_status.presentValue = "active"
 
+
+    def share_data_to_bacnet_server(self):
+        # BACnet server processes
+        return self.current_server_payload
+
+    
     def parse_property_identifier(self, property_identifier):
         # BACnet writes processess
         # Regular expression for 'property[index]' matching
@@ -222,6 +264,7 @@ class Utils:
 
         return property_identifier, property_array_index
 
+
     async def do_write_property_task(
         self,
         device_address,
@@ -230,7 +273,7 @@ class Utils:
         value,
         priority=BACNET_WRITE_PRIORITY,
     ):
-        if _debug:
+        if _info:
             logging.info(" device_address: %r", device_address)
             logging.info(" object_identifier: %r", object_identifier)
 
@@ -239,7 +282,7 @@ class Utils:
             property_identifier
         )
 
-        if _debug:
+        if _info:
             logging.info(" property_array_index: %r", property_array_index)
 
         # Check the priority
@@ -247,14 +290,14 @@ class Utils:
             priority = int(priority)
             if (priority < 1) or (priority > 16):
                 raise ValueError(f"priority: {priority}")
-        if _debug:
+        if _info:
             logging.info(" priority: %r", priority)
 
-        if _debug:
+        if _info:
             logging.info(" value: %r", value)
 
-        if _debug:
-            logging.debug(
+        if _info:
+            logging.info(
                 "do_write %r %r %r %r %r",
                 device_address,
                 object_identifier,
@@ -277,15 +320,16 @@ class Utils:
                 property_array_index,
                 priority,
             )
-            if _debug:
+            if _info:
                 logging.info(" response: %r", response)
-            if _debug:
+            if _info:
                 logging.info(" Write property successful")
         except ErrorRejectAbortNack as err:
-            if _debug:
+            if _info:
                 logging.info("    - exception: %r", err)
             else:
                 logging.error(" Write property failed: ", err)
+
 
     async def do_read_property_task(self, requests):
         read_values = []

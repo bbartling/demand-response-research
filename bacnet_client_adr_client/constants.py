@@ -10,7 +10,7 @@ USE_DR_SERVER = True
 CLOUD_DR_SERVER_CHECK_SECONDS = 10
 
 BACNET_SERVER_API_UPDATE_INTERVAL = 2.0
-ALGORITHM_READ_REQ_INTERVAL = 60.0
+ALGORITHM_RUN_FREQUENCY_SECONDS = 60.0
 BACNET_WRITE_PRIORITY = 3
 
 BACNET_PRESENT_VALUE_PROP_IDENTIFIER = "present-value"
@@ -21,9 +21,9 @@ MECHO_ADDRESS = Address("10.7.6.161/24:47820")
 TRANE_ADDRESS = Address("32:18")
 
 # writes only to mecho object_identifiers
-MECHO_DR_WRITE_POINT = ObjectIdentifier("analog-value,97")
-MECHO_HVAC_WRITE_POINT = ObjectIdentifier("analog-value,99")
+MECHO_DR_WRITE_POINT = ObjectIdentifier("analog-value,99")
 MECHO_OCC_WRITE_POINT = ObjectIdentifier("analog-value,98")
+MECHO_HVAC_WRITE_POINT = ObjectIdentifier("analog-value,97")
 
 # HVAC reads object_identifiers
 TRANE_TEMP_SETPOINT_READ_WRITE_POINT = ObjectIdentifier("analog-value,27")
